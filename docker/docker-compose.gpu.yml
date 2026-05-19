@@ -1,0 +1,26 @@
+# ─────────────────────────────────────────────
+# GPU Override for Ollama
+# ─────────────────────────────────────────────
+# Requires: nvidia-container-toolkit on the host
+#   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+#
+# Usage with all-in-one compose:
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.gpu.yml up -d
+#
+# Usage with production compose:
+#   docker compose -f docker/docker-compose.prod.yml -f docker/docker-compose.gpu.yml --env-file .env.production up -d
+# ─────────────────────────────────────────────
+
+services:
+  ollama:
+    environment:
+      # Tune Ollama for GPU inference
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

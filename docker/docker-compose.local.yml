@@ -1,0 +1,112 @@
+# ─────────────────────────────────────────────
+# YouTube AI Platform — Local Development Infra
+# ─────────────────────────────────────────────
+# Starts only PostgreSQL + Redis for local dev.
+# The API and dashboard run via `npm run dev`.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.local.yml up -d
+#   docker compose -f docker/docker-compose.local.yml down
+#
+# With Adminer (DB GUI):
+#   docker compose -f docker/docker-compose.local.yml --profile with-adminer up -d
+# ─────────────────────────────────────────────
+
+networks:
+  yt-local:
+    driver: bridge
+
+volumes:
+  yt-postgres-data:
+    name: yt-postgres-data
+    driver: local
+  yt-redis-data:
+    name: yt-redis-data
+    driver: local
+
+services:
+  # ─── PostgreSQL ──────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: yt-postgres
+    restart: unless-stopped
+    networks:
+      - yt-local
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - yt-postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-youtube_ai_platform}
+    command: postgres -c max_connections=200 -c shared_buffers=256MB -c effective_cache_size=768MB -c random_page_cost=1.1 -c effective_io_concurrency=200
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-youtube_ai_platform}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+      start_interval: 2s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # ─── Redis ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: yt-redis
+    restart: unless-stopped
+    networks:
+      - yt-local
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - yt-redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+      start_interval: 1s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # ─── Adminer (DB GUI - optional) ────────────
+  adminer:
+    image: adminer:4.8.1
+    container_name: yt-adminer
+    profiles:
+      - with-adminer
+    restart: unless-stopped
+    networks:
+      - yt-local
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: 2

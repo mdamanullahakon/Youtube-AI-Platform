@@ -1,0 +1,1075 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String          @id @default(cuid())
+  email           String          @unique
+  password        String
+  name            String?
+  avatar          String?
+  role            String          @default("user")
+  activeChannelId String?
+  activeChannel   YouTubeAccount? @relation("ActiveChannel", fields: [activeChannelId], references: [id])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  subscription    Subscription?
+  settings        Settings?
+  projects        VideoProject[]
+  uploadHistory   UploadHistory[]
+  youTubeAccounts YouTubeAccount[]
+  aiUsage         AIUsage[]
+}
+
+model Subscription {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan          String   @default("free")
+  status        String   @default("active")
+  videoLimit    Int      @default(10)
+  videosUsed    Int      @default(0)
+  renewsAt      DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Settings {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  geminiKey      String?
+  youtubeApiKey  String?
+  preferredModel String  @default("ollama")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model VideoProject {
+  id             String          @id @default(cuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId      String?
+  topic          String
+  title          String?
+  description    String?
+  status         String          @default("draft")
+  viralScore     Float           @default(0)
+  competition    Float           @default(0)
+  audience       String?
+  format         String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  trendResearch  TrendResearch?
+  script         Script?
+  thumbnail      Thumbnail?
+  voiceover      Voiceover?
+  videoRender    VideoRender?
+  analytics              Analytics?
+  uploadHistory          UploadHistory?
+  transcriptIntelligence TranscriptIntelligence?
+  analyticsLearning      AnalyticsLearning?
+  contentPerformance     ContentPerformance?
+  thumbnailPerformance   ThumbnailPerformance?
+  monetizationConversion      MonetizationConversion[]
+  monetizationConversionFunnel MonetizationConversionFunnel?
+  shortsLongFormLinks         ShortsLongFormLink[]       @relation("ShortsLinks")
+  shortsLongFormLinked        ShortsLongFormLink[]       @relation("LongFormLinks")
+
+  @@index([userId])
+  @@index([channelId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId, status])
+  @@index([channelId, status])
+}
+
+model TrendResearch {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  project        VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  topic          String
+  viralScore     Float
+  competition    Float
+  audience       String?
+  format         String?
+  trends         Json?
+  competitors    Json?
+  source         String?
+  analyzedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@index([topic])
+}
+
+model Script {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  project        VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  content        String
+  hook           String?
+  wordCount      Int?
+  tone           String?
+  targetLength   String?
+  generatedBy    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Thumbnail {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  project        VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  prompt         String?
+  imageUrl       String?
+  style          String?
+  ctr            Float?
+  status         String   @default("pending")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+}
+
+model Voiceover {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  project        VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  text           String
+  audioUrl       String?
+  language       String   @default("en")
+  tone           String?
+  duration       Float?
+  status         String   @default("pending")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+}
+
+model VideoRender {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  project        VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  script         String?
+  scenes         Json?
+  videoUrl       String?
+  duration       Float?
+  resolution     String?
+  subtitles      Boolean  @default(true)
+  status         String   @default("pending")
+  progress       Int      @default(0)
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+}
+
+model Analytics {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  project        VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  views          Int      @default(0)
+  likes          Int      @default(0)
+  comments       Int      @default(0)
+  shares         Int      @default(0)
+  ctr            Float    @default(0)
+  retention      Float    @default(0)
+  watchTime      Float    @default(0)
+  subscribersGained Int   @default(0)
+  avgViewDuration Float   @default(0)
+  impressions    Int      @default(0)
+  collectedAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([collectedAt])
+}
+
+model UploadHistory {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  project        VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId      String?
+  videoId        String?
+  title          String?
+  description    String?
+  tags           String?
+  category       String?
+  visibility     String   @default("public")
+  status         String   @default("pending")
+  scheduledAt    DateTime?
+  publishedAt    DateTime?
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([channelId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([channelId, createdAt])
+}
+
+model YouTubeAccount {
+  id                String      @id @default(cuid())
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channelId         String
+  channelTitle      String?
+  channelAvatar     String?
+  accessToken       String
+  refreshToken      String
+  tokenExpiresAt    DateTime
+  scope             String?
+  isConnected       Boolean     @default(true)
+  lastSyncedAt      DateTime    @default(now())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  activeUsers       User[]      @relation("ActiveChannel")
+
+  @@unique([userId, channelId])
+  @@index([userId])
+  @@index([channelId])
+}
+
+model AppConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  userId      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+  @@index([userId])
+}
+
+model AIUsage {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       String
+  model          String   @default("")
+  tokens         Int      @default(0)
+  estimatedCost  Float    @default(0)
+  promptLength   Int      @default(0)
+  duration       Int      @default(0)
+  success        Boolean  @default(true)
+  error          String?
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([provider])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+model QueueJob {
+  id             String   @id @default(cuid())
+  type           String
+  status         String   @default("pending")
+  data           Json?
+  result         Json?
+  error          String?
+  retries        Int      @default(0)
+  maxRetries     Int      @default(3)
+  priority       Int      @default(0)
+  scheduledAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([type, status])
+  @@index([createdAt])
+  @@index([type, createdAt])
+}
+
+model TranscriptIntelligence {
+  id                    String   @id @default(cuid())
+  projectId             String   @unique
+  project               VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  transcriptText        String
+  language              String   @default("en")
+
+  detectedHooks         Json?
+  hookScore             Float?
+  hookRecommendations   String[]
+
+  retentionLoops        Json?
+  patternInterrupts     Json?
+
+  storytellingStructure String?
+  narrativeArcScore     Float?
+
+  pacingScore           Float?
+  wordsPerSecond        Float?
+  sentenceLengthAvg     Float?
+  pacingPattern         Json?
+
+  engagementScore        Float?
+  viralPotentialScore    Float?
+
+  detectedCTAs          String[]
+  ctaEffectiveness      Float?
+
+  emotionalArc          Json?
+
+  insights              Json?
+
+  sourceVideoIds        String[]
+  analyzedAt            DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model ContentInsight {
+  id               String    @id @default(cuid())
+  category         String
+  content          String
+  source           String
+  confidence       Float     @default(0.5)
+  applicationCount Int       @default(0)
+  lastAppliedAt    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([category])
+  @@index([confidence])
+  @@index([source])
+}
+
+model AnalyticsLearning {
+  id                    String   @id @default(cuid())
+  projectId             String   @unique
+  project               VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  hookRetentionScore    Float?
+  hookEffectiveness     Json?
+  thumbnailScore        Float?
+  thumbnailStyle        String?
+
+  dropOffPoints         Json?
+  retentionCurve        Json?
+
+  recommendations       Json?
+
+  learningIteration     Int      @default(1)
+  confidence            Float    @default(0.5)
+  lastAnalyzedAt        DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model ContentPerformance {
+  id                String   @id @default(cuid())
+  projectId         String   @unique
+  project           VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  predictedHookScore     Float?
+  predictedThumbnailCTR  Float?
+  predictedRetention     Float?
+  predictedEngagement    Float?
+
+  actualViews        Int      @default(0)
+  actualCTR          Float    @default(0)
+  actualRetention    Float    @default(0)
+  actualWatchTime    Float    @default(0)
+
+  hookGap            Float?
+  retentionGap       Float?
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([actualCTR])
+  @@index([actualRetention])
+  @@index([actualViews])
+}
+
+model ThumbnailPerformance {
+  id                String   @id @default(cuid())
+  projectId         String   @unique
+  project           VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  style             String?
+  prompt            String?
+  predictedCTR      Float    @default(0)
+  actualCTR         Float    @default(0)
+  impressions       Int      @default(0)
+  clicks            Int      @default(0)
+
+  imageUrl          String?
+
+  analyzedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([style])
+  @@index([actualCTR])
+}
+
+model WinningPattern {
+  id             String   @id @default(cuid())
+  category       String   @default("hook")
+  niche          String?
+  content        String
+  patternType    String   @default("hook-structure")
+  source         String   @default("transcript-analysis")
+  score          Float    @default(0)
+  sampleSize     Int      @default(1)
+  avgRetention   Float?
+  avgCTR         Float?
+  confidence     Float    @default(0.5)
+  metadata       Json?
+  lastUsedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([category])
+  @@index([patternType])
+  @@index([niche])
+  @@index([score])
+  @@index([confidence])
+}
+
+model ViralOpportunity {
+  id                     String   @id @default(cuid())
+  topic                  String   @unique
+  niche                  String?
+  viralScore             Float    @default(0)
+  saturationScore        Float    @default(0)
+  monetizationScore      Float    @default(0)
+  retentionProbability   Float    @default(0)
+  ctrProbability         Float    @default(0)
+  competitionLevel       Float    @default(0)
+  audienceSize           String?
+  growthVelocity         String?
+  emerging               Boolean  @default(false)
+  lowCompetition         Boolean  @default(false)
+  seasonal               Boolean  @default(false)
+  source                 String   @default("ai-analysis")
+  metadata               Json?
+  analyzedAt             DateTime @default(now())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([viralScore])
+  @@index([saturationScore])
+  @@index([niche])
+  @@index([emerging])
+  @@index([lowCompetition])
+  @@index([analyzedAt])
+}
+
+model UploadSchedule {
+  id             String   @id @default(cuid())
+  channelId      String
+  userId         String
+  niche          String?
+  frequency      String   @default("daily")
+  uploadDays     String?
+  uploadTime     String?
+  timezone       String   @default("UTC")
+  nextScheduledAt DateTime?
+  lastUploadedAt DateTime?
+  projectId      String?
+  status         String   @default("active")
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([userId])
+  @@index([status])
+  @@index([nextScheduledAt])
+}
+
+model ChannelMetrics {
+  id                  String   @id @default(cuid())
+  channelId           String
+  userId              String
+  subscribers         Int      @default(0)
+  totalViews          Int      @default(0)
+  totalVideos         Int      @default(0)
+  estimatedRPM        Float    @default(0)
+  estimatedCPM        Float    @default(0)
+  estimatedEarnings   Float    @default(0)
+  monthlyViews        Int      @default(0)
+  monthlyWatchHours   Float    @default(0)
+  subscriberGrowth    Int      @default(0)
+  returningViewerPct  Float    @default(0)
+  avgCTR              Float    @default(0)
+  avgRetention        Float    @default(0)
+  topNiche            String?
+  bestUploadTime      String?
+  bestUploadDay       String?
+  metadata            Json?
+  collectedAt         DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([userId])
+  @@index([collectedAt])
+}
+
+model ContentStrategy {
+  id             String   @id @default(cuid())
+  niche          String   @unique
+  channelId      String?
+  userId         String?
+  pacingStyle    String   @default("fast-paced")
+  hookStyle      String   @default("curiosity-gap")
+  thumbnailStyle String   @default("face-closeup-shock")
+  tone           String   @default("emotional-curiosity")
+  avgDuration    String   @default("8-10min")
+  uploadFrequency String  @default("daily")
+  targetAudience String?
+  ctaStyle       String   @default("direct")
+  storytellingArc String  @default("problem-solution")
+  colorPalette   String?
+  fontStyle      String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([niche])
+  @@index([channelId])
+}
+
+model VideoIdea {
+  id                    String   @id @default(cuid())
+  channelId             String?
+  userId                String?
+  title                 String
+  niche                 String?
+  topic                 String
+  format                String   @default("Shorts")
+  trendScore            Float    @default(0)
+  viralProbability      Float    @default(0)
+  competitionLevel      Float    @default(0)
+  monetizationScore     Float    @default(0)
+  ctrPrediction         Float    @default(0)
+  retentionPrediction   Float    @default(0)
+  emotionalAngle        String?
+  hookSuggestion        String?
+  thumbnailDescription  String?
+  status                String   @default("idea")
+  source                String   @default("ai-generated")
+  metadata              Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([niche])
+  @@index([status])
+  @@index([trendScore])
+  @@index([niche, status])
+}
+
+model ABTestResult {
+  id             String   @id @default(cuid())
+  projectId      String
+  testType       String   @default("title")
+  variantA       String
+  variantB       String
+  winner         String?
+  impressionsA   Int      @default(0)
+  impressionsB   Int      @default(0)
+  clicksA        Int      @default(0)
+  clicksB        Int      @default(0)
+  ctrA           Float    @default(0)
+  ctrB           Float    @default(0)
+  retentionA     Float    @default(0)
+  retentionB     Float    @default(0)
+  confidence     Float    @default(0)
+  statisticallySignificant Boolean @default(false)
+  status         String   @default("running")
+  metadata       Json?
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([testType])
+  @@index([status])
+}
+
+model UploadTimeMetric {
+  id             String   @id @default(cuid())
+  channelId      String
+  userId         String
+  uploadHour     Int
+  uploadDay      String
+  timezone       String   @default("UTC")
+  avgViews       Float    @default(0)
+  avgCTR         Float    @default(0)
+  avgRetention   Float    @default(0)
+  sampleSize     Int      @default(0)
+  score          Float    @default(0)
+  tested         Boolean  @default(false)
+  lastTestedAt   DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([score])
+  @@index([tested])
+}
+
+model MonetizationConversion {
+  id             String   @id @default(cuid())
+  productId      String
+  projectId      String
+  videoId        String
+  clicks         Int      @default(0)
+  conversions    Int      @default(0)
+  revenue        Float    @default(0)
+  conversionRate Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  project        VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([productId])
+  @@index([projectId, productId])
+}
+
+model MonetizationConversionFunnel {
+  id                   String      @id @default(cuid())
+  projectId            String      @unique
+  videoId              String
+  landingPageHtml      String?
+  funnelUrl            String?
+  stages               Json?
+  overallConversionRate Float      @default(0)
+  totalRevenue         Float       @default(0)
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+  project              VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([videoId])
+}
+
+model ShortsLongFormLink {
+  id                   String   @id @default(cuid())
+  shortsProjectId      String   @unique
+  shortsVideoId        String
+  longFormProjectId    String
+  longFormVideoId      String
+  shortsTitle          String?
+  longFormTitle        String?
+  linkType             String   @default("description")
+  trafficDriven        Int      @default(0)
+  conversionsFromTraffic Int    @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  shortsProject        VideoProject @relation("ShortsLinks", fields: [shortsProjectId], references: [id], onDelete: Cascade)
+  longFormProject      VideoProject @relation("LongFormLinks", fields: [longFormProjectId], references: [id], onDelete: Cascade)
+
+  @@index([shortsProjectId])
+  @@index([longFormProjectId])
+  @@index([shortsVideoId])
+}
+
+model IncomeConfig {
+  id                  String   @id @default(cuid())
+  channelId           String   @unique
+  userId              String
+  niche               String   @default("")
+  videosPerDay        Int      @default(3)
+  uploadTimes         String   @default("[]")
+  targetAudience      String   @default("")
+  contentStyle        String   @default("")
+  monetizationTypes   String   @default("[]")
+  minCtrThreshold     Float    @default(2.0)
+  minRetentionThreshold Float  @default(25.0)
+  maxFailRate         Float    @default(0.3)
+  enabled             Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([userId])
+  @@index([enabled])
+}
+
+model IncomeTopicCache {
+  id                String   @id @default(cuid())
+  channelId         String
+  userId            String
+  niche             String   @default("")
+  topic             String
+  viralScore        Float    @default(0)
+  competitionScore  Float    @default(0)
+  monetizationScore Float    @default(0)
+  ctrPrediction     Float    @default(0)
+  retentionPrediction Float  @default(0)
+  totalScore        Float    @default(0)
+  reasoning         String   @default("")
+  source            String   @default("trending")
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+
+  @@index([channelId])
+  @@index([niche])
+  @@index([totalScore])
+  @@index([expiresAt])
+  @@index([channelId, expiresAt])
+}
+
+model IncomeVideoOutput {
+  id                String   @id @default(cuid())
+  projectId         String   @unique
+  channelId         String
+  userId            String
+  topic             String
+  title             String
+  script            String
+  hook              String
+  thumbnailPrompt   String
+  thumbnailStyle    String
+  seoTags           String   @default("[]")
+  seoDescription    String   @default("")
+  categoryId        String   @default("")
+  affiliateLinks    String   @default("[]")
+  ctaText           String   @default("")
+  ctaPlacement      String   @default("")
+  funnelType        String   @default("")
+  estimatedCpm      Float    @default(0)
+  estimatedRevenue  Float    @default(0)
+  uploadStatus      String   @default("pending")
+  videoId           String?
+  publishedAt       DateTime?
+  error             String?
+  cycleId           String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([projectId])
+  @@index([uploadStatus])
+  @@index([cycleId])
+  @@index([channelId, uploadStatus])
+}
+
+model IncomeAnalyticsSnapshot {
+  id                String   @id @default(cuid())
+  projectId         String
+  videoId           String
+  channelId         String
+  snapshotType      String   @default("early")
+  minutesSinceUpload Int     @default(0)
+  views             Int      @default(0)
+  likes             Int      @default(0)
+  comments          Int      @default(0)
+  shares            Int      @default(0)
+  ctr               Float    @default(0)
+  retention         Float    @default(0)
+  watchTime         Float    @default(0)
+  subscribersGained Int      @default(0)
+  impressions       Int      @default(0)
+  avgViewDuration   Float    @default(0)
+  collectedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  @@index([projectId])
+  @@index([channelId])
+  @@index([snapshotType])
+  @@index([collectedAt])
+  @@index([projectId, snapshotType])
+}
+
+model IncomeWinnerPattern {
+  id                String   @id @default(cuid())
+  patternType       String   @default("hook-style")
+  patternValue      String
+  niche             String   @default("")
+  channelId         String?
+  score             Float    @default(0)
+  sampleSize        Int      @default(1)
+  avgViews          Float    @default(0)
+  avgCtr            Float    @default(0)
+  avgRetention      Float    @default(0)
+  confidence        Float    @default(0.5)
+  lastUsedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([patternType])
+  @@index([niche])
+  @@index([score])
+  @@index([channelId])
+  @@index([niche, patternType])
+}
+
+model ViralPredictionLog {
+  id                 String   @id @default(cuid())
+  projectId          String?
+  topic              String
+  category           String   @default("general")
+  trendScore         Float    @default(0)
+  competitionLevel   String   @default("medium")
+  searchDemand       Float    @default(0)
+  noveltyScore       Float    @default(0)
+  ctrScore           Float    @default(0)
+  retentionScore     Float    @default(0)
+  monetizationScore  Float    @default(0)
+  saturationScore    Float    @default(0)
+  viralScore         Float    @default(0)
+  decision           String   @default("ALLOW")
+  improvementSuggestions String[] @default([])
+
+  actualViews        Int      @default(0)
+  actualCTR          Float    @default(0)
+  actualRetention    Float    @default(0)
+  actualWatchTime    Float    @default(0)
+
+  ctrError           Float?
+  retentionError     Float?
+  viralScoreError    Float?
+
+  weightsUsed        Json?
+  metadata           Json?
+  analyzedAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([topic])
+  @@index([category])
+  @@index([viralScore])
+  @@index([decision])
+  @@index([analyzedAt])
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+model RevenuePredictionLog {
+  id                  String   @id @default(cuid())
+  projectId           String?
+  topic               String
+  profitabilityTier   String   @default("profitable")
+  revenueForecastMin  Float    @default(0)
+  revenueForecastMax  Float    @default(0)
+  revenueForecastExp  Float    @default(0)
+  forecastConfidence  Float    @default(0)
+  usRevenueMultiplier Float    @default(1.0)
+  adsensePotential    Float    @default(0)
+  affiliatePotential  Float    @default(0)
+  totalMonetizationScore Float @default(0)
+  decision            String   @default("APPROVE")
+  actualRevenue       Float    @default(0)
+  actualAdsense       Float    @default(0)
+  actualAffiliate     Float    @default(0)
+  revenueError        Float?
+  weightsUsed         Json?
+  metadata            Json?
+  analyzedAt          DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([topic])
+  @@index([profitabilityTier])
+  @@index([totalMonetizationScore])
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+model ChannelGrowthSnapshot {
+  id                String   @id @default(cuid())
+  channelId         String
+  userId            String
+  growthScore       Float    @default(0)
+  avgCtr            Float    @default(0)
+  avgRetention      Float    @default(0)
+  subscriberGrowth  Int      @default(0)
+  watchTime         Float    @default(0)
+  consistencyScore  Float    @default(0)
+  channelHealth     Float    @default(0)
+  growthTrend       String   @default("stable")
+  riskLevel         String   @default("medium")
+  scalingDecision   String   @default("STABILIZE")
+  viralRatio        Float    @default(40)
+  evergreenRatio    Float    @default(40)
+  authorityRatio    Float    @default(20)
+  totalVideos       Int      @default(0)
+  totalViews        Int      @default(0)
+  subscribers       Int      @default(0)
+  metadata          Json?
+  snapshotDate      DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([snapshotDate])
+  @@index([growthScore])
+  @@index([channelId, snapshotDate])
+}
+
+model ContentMixPlan {
+  id              String   @id @default(cuid())
+  channelId       String
+  userId          String?
+  viralPct        Float    @default(40)
+  evergreenPct    Float    @default(40)
+  authorityPct    Float    @default(20)
+  viralTopics     Json?
+  evergreenTopics Json?
+  authorityTopics Json?
+  forbiddenTopics String[] @default([])
+  winningNiches   String[] @default([])
+  active          Boolean  @default(true)
+  periodStart     DateTime @default(now())
+  periodEnd       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([active])
+  @@index([channelId, active])
+}
+
+model FailedPattern {
+  id            String   @id @default(cuid())
+  channelId     String?
+  patternType   String   @default("topic")
+  patternValue  String
+  niche         String?
+  failureReason String   @default("low-ctr")
+  avgScore      Float    @default(0)
+  sampleSize    Int      @default(1)
+  detectedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([patternType])
+  @@index([patternValue])
+  @@index([channelId])
+  @@index([niche, patternType])
+}
+
+model StrategyDecision {
+  id              String   @id @default(cuid())
+  channelId       String
+  userId          String
+  decisionType    String   @default("SCALE")
+  growthScore     Float    @default(0)
+  riskLevel       String   @default("medium")
+  reasoning       String   @default("")
+  actions         Json?
+  previousScore   Float?
+  scoreDelta      Float?
+  applied         Boolean  @default(false)
+  appliedAt       DateTime?
+  decidedAt       DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([decisionType])
+  @@index([decidedAt])
+  @@index([channelId, decidedAt])
+}
+
+model ViralWeightConfig {
+  id            String   @id @default(cuid())
+  weightType    String   @unique
+  value         Float    @default(0.25)
+  minValue      Float    @default(0.05)
+  maxValue      Float    @default(0.50)
+  adjustmentRate Float   @default(0.01)
+  sampleSize    Int      @default(0)
+  lastAdjustedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([weightType])
+}
+
+model ViralScore {
+  id                  String   @id @default(cuid())
+  projectId           String   @unique
+  topic               String
+  overallScore        Float    @default(0)
+  trendScore          Float    @default(0)
+  engagementScore     Float    @default(0)
+  retentionScore      Float    @default(0)
+  ctrScore            Float    @default(0)
+  monetizationScore   Float    @default(0)
+  noveltyScore        Float    @default(0)
+  competitionScore    Float    @default(0)
+  saturationScore     Float    @default(0)
+  confidence          Float    @default(0.5)
+  factors             Json?
+  recommendations     String[]
+  scoredAt            DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([overallScore])
+  @@index([topic])
+  @@index([scoredAt])
+}
+
+model ViralMetrics {
+  id                  String   @id @default(cuid())
+  channelId           String
+  period              String   @default("daily")
+  periodStart         DateTime
+  periodEnd           DateTime?
+  totalVideos         Int      @default(0)
+  avgViralScore       Float    @default(0)
+  maxViralScore       Float    @default(0)
+  viralRate           Float    @default(0)
+  totalViews          Int      @default(0)
+  avgCTR              Float    @default(0)
+  avgRetention        Float    @default(0)
+  topPerformerId      String?
+  topPerformerScore   Float?
+  metadata            Json?
+  calculatedAt        DateTime @default(now())
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([period, periodStart])
+  @@index([avgViralScore])
+}
+
+model IncomeCycleLog {
+  id                  String   @id @default(cuid())
+  channelId           String
+  userId              String
+  cycleDate           String
+  videosPlanned       Int      @default(0)
+  videosUploaded      Int      @default(0)
+  videosFailed        Int      @default(0)
+  totalEstimatedRevenue Float  @default(0)
+  riskFlags           String   @default("[]")
+  status              String   @default("running")
+  startedAt           DateTime @default(now())
+  completedAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([channelId])
+  @@index([cycleDate])
+  @@index([status])
+  @@index([channelId, cycleDate])
+}

@@ -1,0 +1,12 @@
+[ENV] Warning: OPENAI_API_KEY is not set — Without this, only Ollama will be available for AI
+[ENV] Warning: YOUTUBE_API_KEY is not set — YouTube analytics will be unavailable
+[ENV] Warning: SMTP_HOST is not set — Password reset emails will not work
+[ENV] Warning: YOUTUBE_CLIENT_ID is not set — YouTube OAuth login will be unavailable
+[ENV] Warning: YOUTUBE_CLIENT_SECRET is not set — YouTube OAuth login will be unavailable
+[ENV] Warning: ELEVENLABS_API_KEY is not set — AI voiceover generation will be limited
+[ENV] Warning: OPENAI_API_KEY is not set — Without this, only Ollama will be available for AI
+[ENV] Warning: YOUTUBE_API_KEY is not set — YouTube analytics will be unavailable
+[ENV] Warning: SMTP_HOST is not set — Password reset emails will not work
+[ENV] Warning: YOUTUBE_CLIENT_ID is not set — YouTube OAuth login will be unavailable
+[ENV] Warning: YOUTUBE_CLIENT_SECRET is not set — YouTube OAuth login will be unavailable
+[ENV] Warning: ELEVENLABS_API_KEY is not set — AI voiceover generation will be limited

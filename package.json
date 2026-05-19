@@ -1,0 +1,59 @@
+{
+  "name": "youtube-ai-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Autonomous AI YouTube Content Operating System",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "setup": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    "start:dev": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
+    "deploy": "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 -Up",
+    "deploy:build": "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 -Build -Up",
+    "db:up": "docker compose -f docker/docker-compose.local.yml down && docker compose -f docker/docker-compose.local.yml up -d",
+    "db:down": "docker compose -f docker/docker-compose.local.yml down",
+    "db:reset": "docker compose -f docker/docker-compose.local.yml down -v && docker compose -f docker/docker-compose.local.yml up -d",
+    "db:logs": "docker compose -f docker/docker-compose.local.yml logs -f",
+    "db:psql": "docker compose -f docker/docker-compose.local.yml exec postgres psql -U postgres -d youtube_ai_platform",
+    "db:redis-cli": "docker compose -f docker/docker-compose.local.yml exec redis redis-cli",
+    "db:adminer": "docker compose -f docker/docker-compose.local.yml --profile with-adminer up -d adminer",
+    "studio": "npm run db:studio --workspace=api",
+    "migrate": "npm run db:migrate --workspace=api",
+    "migrate:deploy": "npm run prisma:migrate:deploy --workspace=api",
+    "migrate:status": "npm run prisma:check --workspace=api",
+    "migrate:diff": "npm run prisma:diff --workspace=api",
+    "migrate:drift": "npm run prisma:drift --workspace=api",
+    "db:drift": "powershell -ExecutionPolicy Bypass -File scripts/db.ps1 drift",
+    "db:status": "powershell -ExecutionPolicy Bypass -File scripts/db.ps1 status",
+
+    "start": "start-all.bat",
+    "orchestrate": "node scripts/dev-orchestrator.js",
+    "health": "node scripts/health-monitor.js",
+    "health:watch": "node scripts/health-monitor.js --watch",
+    "health:recover": "node scripts/health-monitor.js --watch --recover",
+    "env:check": "node scripts/env-validator.js",
+    "env:fix": "node scripts/env-validator.js --fix",
+    "env:strict": "node scripts/env-validator.js --strict",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:status": "pm2 status",
+    "pm2:logs": "pm2 logs",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:restart": "pm2 restart ecosystem.config.js",
+    "pm2:monit": "pm2 monit",
+    "guardian": "powershell -ExecutionPolicy Bypass -File scripts/guardian.ps1 -Daemon",
+    "guardian:check": "powershell -ExecutionPolicy Bypass -File scripts/guardian.ps1",
+    "guardian:recover": "powershell -ExecutionPolicy Bypass -File scripts/guardian.ps1 -Restart"
+  },
+  "workspaces": [
+    "api",
+    "apps/*"
+  ],
+  "devDependencies": {
+    "turbo": "^2.9.12"
+  },
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=18"
+  }
+}

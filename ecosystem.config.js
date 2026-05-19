@@ -1,0 +1,51 @@
+module.exports = {
+  apps: [
+    {
+      name: 'youtube-api',
+      script: 'dist/server.js',
+      cwd: './api',
+      node_args: '-r dotenv/config',
+      instances: 1,
+      exec_mode: 'fork',
+      watch: ['dist'],
+      ignore_watch: ['node_modules', 'logs'],
+      max_memory_restart: '1G',
+      env: {
+        NODE_ENV: 'development',
+        PORT: 4000,
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        PORT: 4000,
+      },
+      error_file: './logs/pm2-api-err.log',
+      out_file: './logs/pm2-api-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      max_restarts: 10,
+      restart_delay: 3000,
+      autorestart: true,
+      kill_timeout: 30000,
+      listen_timeout: 15000,
+    },
+    {
+      name: 'youtube-health-monitor',
+      script: 'scripts/health-monitor.js',
+      cwd: '.',
+      node_args: '',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'development',
+        API_PORT: 4000,
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        API_PORT: 4000,
+      },
+      error_file: './logs/pm2-health-err.log',
+      out_file: './logs/pm2-health-out.log',
+      autorestart: true,
+      kill_timeout: 5000,
+    },
+  ],
+};
