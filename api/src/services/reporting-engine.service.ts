@@ -54,6 +54,15 @@ interface WeeklyReport {
   nextWeekPlan: string[];
 }
 
+function getRPM(topic: string): number {
+  const lower = topic.toLowerCase();
+  if (lower.includes('true crime')) return 12.50;
+  if (lower.includes('paranormal')) return 8.75;
+  if (lower.includes('mystery')) return 10.30;
+  if (lower.includes('horror')) return 7.20;
+  return 6.0;
+}
+
 export class ReportingEngine {
   async generateVideoReport(projectId: string): Promise<VideoReport> {
     const analytics = await prisma.analytics.findUnique({
@@ -169,15 +178,6 @@ export class ReportingEngine {
         `Revenue: $${Math.round(totalRevenue * 100) / 100}`,
       ],
     };
-
-    function getRPM(topic: string): number {
-      const lower = topic.toLowerCase();
-      if (lower.includes('true crime')) return 12.50;
-      if (lower.includes('paranormal')) return 8.75;
-      if (lower.includes('mystery')) return 10.30;
-      if (lower.includes('horror')) return 7.20;
-      return 6.0;
-    }
   }
 
   async generateWeeklyReport(userId: string): Promise<WeeklyReport> {
@@ -267,15 +267,6 @@ export class ReportingEngine {
         accounts.length < 3 ? 'Connect more channels for scaling' : 'Optimize existing channels before scaling',
       ],
     };
-
-    function getRPM(topic: string): number {
-      const lower = topic.toLowerCase();
-      if (lower.includes('true crime')) return 12.50;
-      if (lower.includes('paranormal')) return 8.75;
-      if (lower.includes('mystery')) return 10.30;
-      if (lower.includes('horror')) return 7.20;
-      return 6.0;
-    }
   }
 
   async generateMistakeAnalysis(projectId: string): Promise<{

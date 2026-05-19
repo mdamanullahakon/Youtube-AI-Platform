@@ -132,7 +132,12 @@ export class SelfImprovingContentEngine {
       `, 'ollama', { temperature: 0.6 });
 
       if (hookResponse && hookResponse.length > 20) {
-        improvedScript = improvedScript.replace(/---HOOK---.*?---/, `---HOOK---${hookResponse}---`);
+        const firstSentenceEnd = improvedScript.search(/[.!?]\s/);
+        if (firstSentenceEnd > 0) {
+          improvedScript = hookResponse + improvedScript.substring(firstSentenceEnd + 1);
+        } else {
+          improvedScript = hookResponse + '\n\n' + improvedScript;
+        }
       }
     }
 
@@ -216,13 +221,22 @@ export class SelfImprovingContentEngine {
     analytics: any
   ): Promise<void> {
     try {
-      const patterns: LearnedPattern[] = improvements.map(imp => ({
-        pattern: imp.change,
-        component: imp.component,
-        effectiveness: imp.expectedLift,
-        timesUsed: 1,
-        confidence: 0.5,
-      }));
+      const existing = await prisma.analyticsLearning.findUnique({
+        where: { projectId },
+      });
+
+      const existingPatterns: LearnedPattern[] = existing?.recommendations
+        ? ((existing.recommendations as any).patterns || [])
+        : [];
+
+      const patterns: LearnedPattern[] = improvements.map(imp => {
+        const match = existingPatterns.find(
+          e => e.component === imp.component && e.pattern === imp.change
+        );
+        return match
+          ? { ...match, timesUsed: match.timesUsed + 1, effectiveness: Math.round((match.effectiveness + imp.expectedLift) / 2) }
+          : { pattern: imp.change, component: imp.component, effectiveness: imp.expectedLift, timesUsed: 1, confidence: 0.5 };
+      });
 
       await prisma.analyticsLearning.upsert({
         where: { projectId },

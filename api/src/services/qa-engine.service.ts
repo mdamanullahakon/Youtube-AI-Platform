@@ -88,8 +88,18 @@ export class QAEngine {
           if (fixedScenes[i].duration > 20) {
             const half = Math.floor(fixedScenes[i].duration / 2);
             fixedScenes[i].duration = half;
+            const sceneText = fixedScenes[i].text;
+            const splitPoint = Math.floor(sceneText.length / 2);
+            const spaceBefore = sceneText.lastIndexOf(' ', splitPoint);
+            const spaceAfter = sceneText.indexOf(' ', splitPoint);
+            const mid = spaceBefore > 0 && splitPoint - spaceBefore < 20 ? spaceBefore
+              : spaceAfter > 0 && spaceAfter - splitPoint < 20 ? spaceAfter
+              : splitPoint;
+            const firstHalf = sceneText.substring(0, mid).trim();
+            const secondHalf = sceneText.substring(mid).trim();
+            fixedScenes[i].text = firstHalf;
             fixedScenes.splice(i + 1, 0, {
-              text: `[continued] ${fixedScenes[i].text.substring(0, 50)}...`,
+              text: secondHalf || `[continued from previous scene]`,
               duration: half,
             });
             fixesApplied.push(`Split scene ${i + 1} (was >20s)`);
