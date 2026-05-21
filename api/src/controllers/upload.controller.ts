@@ -41,14 +41,19 @@ export async function uploadToYouTubeHandler(req: Request, res: Response) {
       privacyStatus: 'public',
     });
 
+    await prisma.videoProject.update({
+      where: { id: projectId },
+      data: { status: 'uploading' },
+    });
+
     logger.info(`Upload job ${job.id} enqueued for project ${projectId}`);
 
     res.status(202).json({
       success: true,
       projectId,
       jobId: job.id,
-      status: 'queued',
-      message: 'Upload job queued. Poll /api/videos/status/:projectId for updates.',
+      status: 'processing',
+      message: 'Upload job accepted. Poll /api/videos/status/:projectId for updates.',
     });
   } catch (error: any) {
     logger.error('Upload enqueue failed', { error: error.message });
