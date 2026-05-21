@@ -34,11 +34,30 @@ export interface ParsedScene {
   visualPrompt: string;
 }
 
+export async function detectGpuEncoder(ffmpegPath: string): Promise<'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'libx264'> {
+  try {
+    const { exec } = await import('child_process');
+    const { promisify } = await import('util');
+    const execAsync = promisify(exec);
+    const { stdout } = await execAsync(`"${ffmpegPath}" -encoders 2>&1`, { timeout: 5000 });
+    if (stdout.includes('h264_nvenc')) return 'h264_nvenc';
+    if (stdout.includes('h264_qsv')) return 'h264_qsv';
+    if (stdout.includes('h264_amf')) return 'h264_amf';
+  } catch { /* fallback */ }
+  return 'libx264';
+}
+
+export function isGpuAvailable(encoder: string): boolean {
+  return encoder !== 'libx264';
+}
+
 export function parseScriptScenes(content: string): ParsedScene[] {
   const scenes: ParsedScene[] = [];
   const lines = content.split('\n');
 
+  // Try format 1: [text|duration|visual]
   for (const line of lines) {
+    if (line.includes('[AI_UNAVAILABLE]') || line.includes('AI_UNAVAILABLE')) continue;
     const match = line.match(/\[(.*?)\]/);
     if (match) {
       const parts = match[1].split('|').map(s => s.trim());
@@ -48,6 +67,55 @@ export function parseScriptScenes(content: string): ParsedScene[] {
         visualPrompt: parts[2] || 'cinematic shot',
       });
     }
+  }
+
+  if (scenes.length > 0) {
+    for (const scene of scenes) {
+      if (scene.duration < 6) scene.duration = 6;
+    }
+    return scenes;
+  }
+
+  // Try format 2: --- SECTION ---\ncontent blocks
+  const sectionRegex = /^---\s*(.+?)\s*---/;
+  let currentText: string[] = [];
+  for (const line of lines) {
+    if (sectionRegex.test(line)) {
+      if (currentText.length > 0) {
+        scenes.push({
+          text: currentText.join(' ').trim(),
+          duration: 18,
+          visualPrompt: 'cinematic scene',
+        });
+        currentText = [];
+      }
+    } else if (line.trim()) {
+      currentText.push(line.trim());
+    }
+  }
+  if (currentText.length > 0) {
+    scenes.push({
+      text: currentText.join(' ').trim(),
+      duration: 18,
+      visualPrompt: 'cinematic scene',
+    });
+  }
+
+  if (scenes.length > 0) {
+    for (const scene of scenes) {
+      if (scene.duration < 6) scene.duration = 6;
+    }
+    return scenes;
+  }
+
+  // Fallback: treat each paragraph as a scene
+  const paragraphs = content.split('\n\n').filter(p => p.trim());
+  for (const para of paragraphs) {
+    scenes.push({
+      text: para.trim().substring(0, 200),
+      duration: 18,
+      visualPrompt: 'cinematic shot',
+    });
   }
 
   if (scenes.length === 0) {

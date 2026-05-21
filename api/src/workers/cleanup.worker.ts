@@ -1,9 +1,10 @@
 import { Worker } from 'bullmq';
-import { redisConnection } from '../config/redis';
+import { redisConnection, detectRedisVersion } from '../config/redis';
 import { logger } from '../utils/logger';
 import { unlink, rm, readdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { guardWorker } from './worker-guard';
 import { StorageManager } from '../services/storage.service';
 
 export interface CleanupJobData {
@@ -42,13 +43,7 @@ let worker: Worker | null = null;
 
 async function isRedisVersionCompatible(): Promise<boolean> {
   try {
-    const { redisConnection } = await import('../config/redis');
-    if (redisConnection.status !== 'ready') {
-      await redisConnection.connect().catch(() => {});
-    }
-    const info = await redisConnection.info('server').catch(() => '');
-    const versionMatch = info.match(/redis_version:(\d+)\.\d+\.\d+/);
-    const major = versionMatch ? parseInt(versionMatch[1], 10) : 0;
+    const major = await detectRedisVersion();
     return major >= 5;
   } catch {
     return false;
@@ -161,13 +156,11 @@ async function getWorker(): Promise<Worker | null> {
 
     worker.on('completed', (job) => logger.info(`Cleanup job ${job.id} completed`));
     worker.on('failed', (job, err) => logger.warn(`Cleanup job ${job?.id} failed`, { error: err.message }));
-    worker.on('error', (err) => {
+
+    guardWorker(worker, 'cleanup', (err) => {
       if (err.message.includes('SCRIPT') || err.message.includes('evalsha') || err.message.includes('NOSCRIPT')) {
         logger.error('Cleanup worker FATAL Lua script error — worker shutting down', { error: err.message });
-        worker?.close();
-        return;
       }
-      logger.error('Cleanup worker error', { error: err.message });
     });
   }
   return worker;

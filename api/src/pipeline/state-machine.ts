@@ -141,7 +141,7 @@ export class PipelineStateMachine {
 
   isAllowed(stepName: string): boolean {
     const targetState = STEP_TO_STATE[stepName];
-    if (!targetState) return false;
+    if (!targetState) return true;
     if (this.cachedState) {
       return VALID_TRANSITIONS[this.cachedState]?.includes(targetState) ?? false;
     }

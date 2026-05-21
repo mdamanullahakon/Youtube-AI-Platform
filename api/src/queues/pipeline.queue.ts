@@ -45,7 +45,7 @@ export async function createFullPipelineFlow(projectId: string, topic: string, c
             queueName: 'youtube-upload',
             data: { projectId, channelId: channel, title: topic, description: '', tags: [topic], privacyStatus: 'public' } satisfies UploadJobData,
             opts: {
-              attempts: 3,
+              attempts: 5,
               backoff: { type: 'exponential', delay: 10000 },
               removeOnComplete: { age: 86400, count: 100 },
               removeOnFail: { age: 86400 * 7, count: 50 },
@@ -56,8 +56,8 @@ export async function createFullPipelineFlow(projectId: string, topic: string, c
                 queueName: 'video-render',
                 data: { projectId, channelId: channel } satisfies RenderJobData,
                 opts: {
-                  attempts: 3,
-                  backoff: { type: 'exponential', delay: 5000 },
+                  attempts: 4,
+                  backoff: { type: 'exponential', delay: 10000 },
                   removeOnComplete: { age: 86400, count: 100 },
                   removeOnFail: { age: 86400 * 7, count: 50 },
                 },
@@ -66,12 +66,12 @@ export async function createFullPipelineFlow(projectId: string, topic: string, c
                     name: 'script-generation',
                     queueName: 'script-generation',
                     data: { projectId, topic, format: 'Shorts', channelId: channel } satisfies ScriptJobData,
-                    opts: {
-                      attempts: 3,
-                      backoff: { type: 'exponential', delay: 2000 },
-                      removeOnComplete: { age: 86400, count: 100 },
-                      removeOnFail: { age: 86400 * 7, count: 50 },
-                    },
+                opts: {
+                  attempts: 4,
+                  backoff: { type: 'exponential', delay: 10000 },
+                  removeOnComplete: { age: 86400, count: 100 },
+                  removeOnFail: { age: 86400 * 7, count: 50 },
+                },
                     children: [
                       {
                         name: 'trend-analysis',
@@ -133,9 +133,9 @@ export async function createScriptToRenderFlow(projectId: string, channelId?: st
           {
             name: 'upload-video',
             queueName: 'youtube-upload',
-            data: { projectId, channelId: channel, title: '', description: '', tags: [] } satisfies UploadJobData,
+            data: { projectId, channelId: channel, title: '(pending)', description: '', tags: [] } satisfies UploadJobData,
             opts: {
-              attempts: 3,
+              attempts: 5,
               backoff: { type: 'exponential', delay: 10000 },
               removeOnComplete: { age: 86400, count: 100 },
               removeOnFail: { age: 86400 * 7, count: 50 },

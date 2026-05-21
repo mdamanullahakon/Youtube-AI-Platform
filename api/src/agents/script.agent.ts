@@ -8,6 +8,7 @@ const CHUNK_TIMEOUT = 120_000;
 const TARGET_SECONDS = 720;
 const SCENE_SECONDS = 18;
 const SCENE_COUNT = 40;
+const MAX_SCENES = 60;
 const viralEngine = new ViralQualityEngine();
 
 async function generateChunk(prompt: string, label: string, timeout = CHUNK_TIMEOUT): Promise<string> {
@@ -178,6 +179,7 @@ async function generateCTA(topic: string, overallStart: number): Promise<string>
     `Write a 2-3 sentence call-to-action for a "${topic}" video.`,
     'Make it urgent and conversational, like a personal invitation.',
     'Include a specific comment prompt that sparks discussion.',
+    'MUST include a clear subscription request (e.g. "subscribe for more")',
     'Return ONLY the CTA text, no labels.',
   ].join('\n');
   return (await generateChunk(ctaPrompt, 'cta', 60000))
@@ -191,6 +193,8 @@ function injectRetentionPatterns(scenes: Scene[]): Scene[] {
     const scene = scenes[i];
     result.push(scene);
 
+    if (result.length >= MAX_SCENES) break;
+
     if (i > 0 && i % 3 === 0 && i < scenes.length - 1) {
       result.push({
         text: 'But here is where it gets really interesting...',
@@ -198,6 +202,8 @@ function injectRetentionPatterns(scenes: Scene[]): Scene[] {
         visualPrompt: 'pattern interrupt, dramatic shift, tension build',
       });
     }
+
+    if (result.length >= MAX_SCENES) break;
 
     if (i > 0 && i % 5 === 0 && i < scenes.length - 2) {
       result.push({
@@ -207,6 +213,8 @@ function injectRetentionPatterns(scenes: Scene[]): Scene[] {
       });
     }
 
+    if (result.length >= MAX_SCENES) break;
+
     if (i > 0 && i % 8 === 0 && i < scenes.length - 1) {
       result.push({
         text: 'And this changes everything.',
@@ -214,6 +222,8 @@ function injectRetentionPatterns(scenes: Scene[]): Scene[] {
         visualPrompt: 'cinematic reveal, music swell moment',
       });
     }
+
+    if (result.length >= MAX_SCENES) break;
 
     if (i === Math.floor(scenes.length / 2)) {
       result.push({
@@ -267,8 +277,9 @@ function enforceViralArc(topic: string, hook: string, scenes: Scene[], cta: stri
     });
   }
 
+  const ctaText = cta.toLowerCase().includes('subscribe') ? cta : `${cta}\n\nSubscribe for more strategies like this and hit the bell so you never miss an update.`;
   result.push({
-    text: cta,
+    text: ctaText,
     duration: 8,
     visualPrompt: 'channel branding, subscribe button with animation, video suggestion cards',
   });

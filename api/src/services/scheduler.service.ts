@@ -10,6 +10,7 @@ import { MultiChannelOrchestrator } from './multi-channel-orchestrator.service';
 import { NotificationService } from './notification.service';
 import { incomeCycleQueue } from './income-system-v2/income.queue';
 import { syncAllUsersChannelStats } from './youtube-oauth.service';
+import { AutoPipelineOrchestrator } from './auto-pipeline-orchestrator.service';
 
 const uploadScheduler = new UploadSchedulerService();
 
@@ -146,4 +147,27 @@ export function initializeSchedulers() {
     }
   });
   logger.info('YouTube channel stats sync scheduler initialized (6-hour interval)');
+
+  const autoPipelineSchedule = process.env.AUTO_PIPELINE_CRON || '0 4 * * *';
+  cron.schedule(autoPipelineSchedule, async () => {
+    logger.info('[AutoPipelineCron] Starting daily auto pipeline');
+    try {
+      const users = await prisma.user.findMany({
+        where: { youTubeAccounts: { some: { isConnected: true } } },
+        select: { id: true },
+      });
+      for (const user of users) {
+        const orchestrator = new AutoPipelineOrchestrator();
+        const result = await orchestrator.runDaily(user.id);
+        if (result.success) {
+          logger.info(`[AutoPipelineCron] Video uploaded for user ${user.id}: ${result.videoId}`);
+        } else {
+          logger.warn(`[AutoPipelineCron] Pipeline skipped for user ${user.id}: ${result.error}`);
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[AutoPipelineCron] Failed: ${err.message}`);
+    }
+  });
+  logger.info(`Auto pipeline scheduler initialized (${autoPipelineSchedule})`);
 }

@@ -1073,3 +1073,99 @@ model IncomeCycleLog {
   @@index([status])
   @@index([channelId, cycleDate])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE 2: PRODUCTION HARDENING MODELS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PipelineCheckpoint {
+  id          String   @id @default(cuid())
+  projectId   String
+  step        String
+  status      String   @default("PENDING")
+  retryCount  Int      @default(0)
+  maxRetries  Int      @default(3)
+  error       String?
+  data        Json?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, step])
+  @@index([projectId])
+  @@index([status])
+  @@index([projectId, status])
+}
+
+model YouTubeQuotaUsage {
+  id          String   @id @default(cuid())
+  channelId   String
+  date        DateTime
+  unitsUsed   Int      @default(0)
+  unitsLimit  Int      @default(10000)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([channelId, date])
+  @@index([channelId])
+  @@index([date])
+}
+
+model WorkerHeartbeat {
+  id            String   @id @default(cuid())
+  workerId      String   @unique
+  queue         String
+  hostname      String
+  instanceId    String
+  status        String   @default("active")
+  jobsProcessed Int      @default(0)
+  jobsFailed    Int      @default(0)
+  lastHeartbeat DateTime @default(now())
+  startedAt     DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([queue])
+  @@index([status])
+  @@index([lastHeartbeat])
+}
+
+model ChannelUsageStats {
+  id              String   @id @default(cuid())
+  channelId       String   @unique
+  dailyUploads    Int      @default(0)
+  weeklyUploads   Int      @default(0)
+  monthlyUploads  Int      @default(0)
+  totalUploads    Int      @default(0)
+  lastUploadAt    DateTime?
+  avgViews        Float    @default(0)
+  avgCtr          Float    @default(0)
+  avgRetention    Float    @default(0)
+  totalRevenue    Float    @default(0)
+  revenueCurrency String   @default("USD")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([channelId])
+}
+
+model RenderJobMetrics {
+  id         String   @id @default(cuid())
+  projectId  String   @unique
+  encoder    String   @default("libx264")
+  scenes     Int      @default(0)
+  duration   Float    @default(0)
+  outputSize Int      @default(0)
+  retries    Int      @default(0)
+  success    Boolean  @default(false)
+  error      String?
+  startedAt  DateTime?
+  completedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([encoder])
+  @@index([success])
+}

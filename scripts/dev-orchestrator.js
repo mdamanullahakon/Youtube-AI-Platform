@@ -71,7 +71,7 @@ const SERVICES = [
     name: 'Dashboard',
     type: 'process',
     command: process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    args: ['next', 'dev'],
+    args: ['next', 'dev', '--webpack', '-p', '3001'],
     port: parseInt(process.env.DASHBOARD_PORT || '3001', 10),
     healthCheck: () => checkHttp(`http://localhost:${process.env.DASHBOARD_PORT || 3001}`, 5000),
     maxRetries: 2,

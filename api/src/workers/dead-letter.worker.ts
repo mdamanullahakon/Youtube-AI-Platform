@@ -2,6 +2,7 @@ import { Worker, Job } from 'bullmq';
 import { redisConnection } from '../config/redis';
 import { queueLogger } from '../utils/logger';
 import { ALL_QUEUES, queueMap } from '../queues/video.queue';
+import { guardWorker } from './worker-guard';
 
 const DLQ_NAMES = ALL_QUEUES.map(q => `${q.name}-dlq`);
 
@@ -71,10 +72,9 @@ const workers: Worker[] = DLQ_NAMES.map((dlqName) => {
     queueLogger.error(`DLQ worker failed to recover ${job?.id}`, { error: err.message });
   });
 
-  w.on('error', (err) => {
+  guardWorker(w, `dlq-${dlqName}`, (err) => {
     if (err.message.includes('SCRIPT') || err.message.includes('evalsha') || err.message.includes('NOSCRIPT')) {
       queueLogger.error(`DLQ worker Lua/evalsha error on ${dlqName}. Closing worker.`, { error: err.message });
-      w.close();
     }
   });
 

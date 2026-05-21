@@ -5,6 +5,7 @@ import { getVideoAnalytics } from '../services/youtube.service';
 import { prisma } from '../config/db';
 import { AnalyticsLearningService } from '../services/analytics-learning.service';
 import { CTRAnalyzer } from '../services/ctr-analyzer.service';
+import { guardWorker } from './worker-guard';
 
 
 const analyticsLearning = new AnalyticsLearningService();
@@ -96,13 +97,11 @@ const worker = new Worker(
 worker.on('completed', (job) => logger.info(`Analytics job ${job.id} completed`));
 worker.on('failed', (job, err) => logger.error(`Analytics job ${job?.id} failed`, { error: err.message }));
 worker.on('progress', (job, progress) => logger.debug(`Analytics job ${job.id} progress: ${progress}%`));
-worker.on('error', (err) => {
+
+guardWorker(worker, 'analytics', (err) => {
   if (err.message.includes('SCRIPT') || err.message.includes('evalsha') || err.message.includes('NOSCRIPT')) {
     logger.error('Analytics worker FATAL Lua script error — worker shutting down', { error: err.message });
-    worker.close();
-    return;
   }
-  logger.error('Analytics worker error', { error: err.message });
 });
 
 export { worker };

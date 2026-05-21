@@ -13,28 +13,39 @@ export async function generateVoiceoverContent(
   tone: string = 'emotional',
   language: string = 'en'
 ): Promise<{ cleanedText: string; ssmlText: string }> {
-  const cleaned = await generateWithAI(`
-    Clean this script for voiceover narration. Remove ALL:
-    - Scene markers
-    - Hook labels (---HOOK---, ---SCENE---, etc.)
-    - Bracketed text like [Scene 1:]
-    - Formatting instructions
-    - Parenthetical notes
+  // Use regex-based cleanup directly (faster and more reliable than AI for this task)
+  const cleanedText = scriptContent
+    .replace(/\[.*?\]/g, '')
+    .replace(/---\w+---/g, '')
+    .replace(/Scene \d+:?/gi, '')
+    .replace(/\(.*?\)/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^.*?:\s*/gm, '')
+    .replace(/\|.*?\|/g, '')
+    .trim();
 
-    Make the remaining text flow naturally for speech.
-    Keep natural pauses marked with "...".
-    Keep emphasis words like "absolutely", "completely", "nothing".
+  // Enrich text with emphasis markers for natural speech patterns
+  const enrichedText = enrichSpeechPatterns(cleanedText || scriptContent);
+  const ssmlText = convertToSSML(enrichedText, tone, language);
 
-    Script:
-    ${scriptContent}
+  return { cleanedText: enrichedText, ssmlText };
+}
 
-    Return ONLY the clean narration text, no explanations.
-  `, 'ollama', { temperature: 0.3 });
+function enrichSpeechPatterns(text: string): string {
+  let result = text;
 
-  const cleanedText = cleaned.trim();
-  const ssmlText = convertToSSML(cleanedText, tone, language);
+  // Add natural pauses after rhetorical questions
+  result = result.replace(/(\?)\s/g, '$1... ');
+  // Add emphasis around key power words
+  const emphasisWords = ['absolutely', 'completely', 'nothing', 'everything', 'never', 'always', 'impossible', 'guaranteed', 'secret', 'hidden', 'shocking', 'genius'];
+  for (const word of emphasisWords) {
+    const regex = new RegExp(`\\b(${word})\\b`, 'gi');
+    result = result.replace(regex, '... $1 ...');
+  }
+  // Clean up multiple consecutive pauses
+  result = result.replace(/\.{4,}/g, '...').replace(/\.\.\.\s+\.\.\./g, '...').replace(/\s{3,}/g, ' ');
 
-  return { cleanedText, ssmlText };
+  return result;
 }
 
 function convertToSSML(text: string, tone: string, language: string): string {
@@ -61,7 +72,7 @@ export async function createVoiceover(
 ): Promise<VoiceoverResult> {
   aiLogger.info(`Creating voiceover for project ${projectId} (${language}, ${tone})`);
 
-  const { cleanedText } = await generateVoiceoverContent(text, tone, language);
+  const { cleanedText, ssmlText } = await generateVoiceoverContent(text, tone, language);
   const outputDir = join(process.cwd(), 'uploads', 'voiceovers');
   await mkdir(outputDir, { recursive: true });
 
@@ -72,8 +83,8 @@ export async function createVoiceover(
   const wordCount = cleanedText.split(/\s+/).length;
   const estimatedDuration = Math.ceil(wordCount / 2.5);
 
-  const voiceoverResult = (audioUrl: string | null, duration: number): VoiceoverResult => ({
-    text: cleanedText,
+  const voiceoverResult = (audioUrl: string | null, duration: number, textUsed: string = cleanedText): VoiceoverResult => ({
+    text: textUsed,
     audioUrl,
     duration,
     language,
@@ -90,11 +101,11 @@ export async function createVoiceover(
     aiLogger.warn(`ElevenLabs failed, trying fallback: ${err.message}`);
   }
 
-  aiLogger.info('Trying Edge TTS for voiceover');
-  const edgeSuccess = await synthesizeSpeech(cleanedText, mp3Path, language);
+  aiLogger.info('Trying Edge TTS for voiceover (with SSML for natural speech)');
+  const edgeSuccess = await synthesizeSpeech(ssmlText, mp3Path, language);
   if (edgeSuccess) {
-    aiLogger.info(`Voiceover via Edge TTS: ${mp3Path}`);
-    return voiceoverResult(`/uploads/voiceovers/${projectId}_${timestamp}.mp3`, estimatedDuration);
+    aiLogger.info(`Voiceover via Edge TTS (SSML): ${mp3Path}`);
+    return voiceoverResult(`/uploads/voiceovers/${projectId}_${timestamp}.mp3`, estimatedDuration, cleanedText);
   }
 
   aiLogger.info('Edge TTS unavailable, trying Coqui TTS fallback');

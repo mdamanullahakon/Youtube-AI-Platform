@@ -3,6 +3,7 @@ import { redisConnection } from '../config/redis';
 import { queueLogger } from '../utils/logger';
 import { AIOrchestrator } from '../ai/orchestrator';
 import { prisma } from '../config/db';
+import { guardWorker } from './worker-guard';
 
 const worker = new Worker(
   'video-generation',
@@ -48,13 +49,10 @@ worker.on('progress', (job, progress) => {
   queueLogger.debug(`Video job ${job.id} progress: ${progress}%`);
 });
 
-worker.on('error', (err) => {
+guardWorker(worker, 'video', (err) => {
   if (err.message.includes('SCRIPT') || err.message.includes('evalsha') || err.message.includes('NOSCRIPT')) {
     queueLogger.error('Video worker FATAL Lua script error — worker shutting down', { error: err.message });
-    worker.close();
-    return;
   }
-  queueLogger.error('Video worker error', { error: err.message });
 });
 
 export { worker };

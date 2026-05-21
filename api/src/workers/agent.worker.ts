@@ -6,6 +6,7 @@ import { generateVisualPrompts } from '../agents/prompt.agent';
 import { createVoiceover } from '../agents/voiceover.agent';
 import { generateThumbnail } from '../agents/thumbnail.agent';
 import { optimizeSEO } from '../agents/seo.agent';
+import { guardWorker } from './worker-guard';
 
 
 const worker = new Worker(
@@ -122,13 +123,10 @@ worker.on('progress', (job, progress) => {
   queueLogger.debug(`Agent job ${job.id} (${job.name}) progress: ${progress}%`);
 });
 
-worker.on('error', (err) => {
+guardWorker(worker, 'agent', (err) => {
   if (err.message.includes('SCRIPT') || err.message.includes('evalsha') || err.message.includes('NOSCRIPT')) {
     queueLogger.error('Agent worker FATAL Lua script error — worker shutting down', { error: err.message });
-    worker.close();
-    return;
   }
-  queueLogger.error('Agent worker error', { error: err.message });
 });
 
 export { worker };

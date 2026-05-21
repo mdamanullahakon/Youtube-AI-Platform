@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node scripts/start-safe-dev.js",
+    "dev:direct": "next dev --webpack -p 3001",
+    "build": "next build --webpack",
+    "start": "next start -p 3001",
     "lint": "eslint",
-    "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
-    "prebuild": "npm run clean",
-    "predev": "npm run clean"
+    "clean": "node scripts/clean-dev.js",
+    "prebuild": "npm run clean"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.10",

@@ -33,9 +33,19 @@ import intelligenceRoutes from './routes/intelligence.routes';
 import aiControlRoutes from './routes/ai-control.routes';
 import contentPlanRoutes from './routes/content-plan.routes';
 import businessDashboardRoutes from './routes/business-dashboard.routes';
+import testUploadRoutes from './routes/test-upload.routes';
+import autoPipelineRoutes from './routes/auto-pipeline.routes';
 
 import { errorHandler } from './middleware/errorHandler';
+import { requestTimeout } from './middleware/requestTimeout';
+import { traceId } from './middleware/traceId';
+import { channelRateLimit } from './middleware/channelRateLimit';
 import { redisRateLimiter, securityHeaders, validateApiKey } from './services/security.service';
+import adminRoutes from './routes/admin.routes';
+import { dlqManager } from './services/dlq-manager.service';
+import { workerHeartbeat } from './services/worker-heartbeat.service';
+import { autoScaling } from './services/auto-scaling.service';
+import { storageS3 } from './services/storage-s3.service';
 
 import { logger } from './utils/logger';
 import { prisma } from './config/db';
@@ -45,11 +55,12 @@ import { startDeadLetterProcessing, stopDeadLetterProcessing } from './workers/d
 import { ALL_QUEUES, queueMap, dlqMap } from './queues/video.queue';
 import { queueLogger } from './utils/logger';
 import { scheduleCleanupJobs } from './workers/cleanup.worker';
+import { closeAllIncomeWorkers } from './services/income-system-v2/income.workers';
 import { StorageManager } from './services/storage.service';
 import { storageGuard, storageGuardForRender } from './middleware/storageGuard';
 import { createCsrfMiddleware } from './middleware/csrf';
 import { disconnectDatabase } from './config/db';
-import { disconnectRedis } from './config/redis';
+import { disconnectRedis, detectRedisVersion, isRedisCompatible } from './config/redis';
 import { validateEnvironment } from './utils/env-validator';
 import { validateStartup, formatStartupReport } from './utils/startup-validator';
 import { validateOAuthCredentials, formatOAuthReport } from './utils/oauth-validator';
@@ -63,20 +74,16 @@ let workersStarted = false;
 
 async function checkRedisAvailable(): Promise<boolean> {
   try {
-    const redis = (await import('./config/redis')).redisConnection;
-    if (redis.status !== 'ready') {
-      await redis.connect();
-      await redis.ping();
-    }
-    const info = await redis.info('server');
-    const versionMatch = info.match(/redis_version:(\d+)\.\d+\.\d+/);
-    const major = versionMatch ? parseInt(versionMatch[1], 10) : 0;
+    const major = await detectRedisVersion();
     if (major < 5) {
-      logger.warn(`Redis version ${versionMatch?.[1] || '?'} detected. BullMQ requires 5+. Queues disabled.`);
+      logger.warn(`Redis version ${major} detected. BullMQ requires 5+. Queues disabled.`);
       return false;
     }
+    await redisConnection.ping();
+    logger.info(`Redis v${major}+ compatible — workers will start`);
     return true;
-  } catch {
+  } catch (err: any) {
+    logger.warn(`Redis unavailable — skipping worker startup. API will run without queues.`, { error: err.message });
     return false;
   }
 }
@@ -85,7 +92,6 @@ async function startWorkersIfRedisAvailable() {
   if (workersStarted) return;
   redisAvailable = await checkRedisAvailable();
   if (!redisAvailable) {
-    logger.warn('Redis unavailable — skipping worker startup. API will run without queues.');
     return;
   }
 
@@ -193,8 +199,13 @@ app.use(cookieParser());
 applySecurityMiddleware(app);
 
 app.use(requestId);
+app.use(traceId);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Global request timeout — prevents hanging connections
+app.use(requestTimeout(parseInt(process.env.REQUEST_TIMEOUT_MS || '120000', 10)));
+
 morgan.token('request-id', (req) => (req as any).id || '-');
 app.use(morgan(':method :url :status :response-time ms - :request-id'));
 app.use((req, res, next) => {
@@ -243,10 +254,10 @@ app.get('/api/health', (_req, res) => {
 
 // Route registrations
 app.use('/api/auth', authRoutes);
-app.use('/api/trends', trendsRoutes);
-app.use('/api/scripts', scriptsRoutes);
-app.use('/api/videos', videosRoutes);
-app.use('/api/upload', uploadRoutes);
+app.use('/api/trends', channelRateLimit, trendsRoutes);
+app.use('/api/scripts', channelRateLimit, scriptsRoutes);
+app.use('/api/videos', channelRateLimit, videosRoutes);
+app.use('/api/upload', channelRateLimit, uploadRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/transcripts', transcriptsRoutes);
 app.use('/api/transcript-intelligence', transcriptIntelligenceRoutes);
@@ -254,16 +265,19 @@ app.use('/api/analytics-learning', analyticsLearningRoutes);
 app.use('/api/queues', queueRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/auth/youtube', youtubeAuthRoutes);
-app.use('/api/business', businessRoutes);
-app.use('/api/godmode', godmodeRoutes);
-app.use('/api/horror', horrorRoutes);
+app.use('/api/business', channelRateLimit, businessRoutes);
+app.use('/api/godmode', channelRateLimit, godmodeRoutes);
+app.use('/api/horror', channelRateLimit, horrorRoutes);
 app.use('/api/keys', keysRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/deploy', deployRoutes);
 app.use('/api/intelligence', intelligenceRoutes);
-app.use('/api/ai-control', aiControlRoutes);
+app.use('/api/ai-control', channelRateLimit, aiControlRoutes);
 app.use('/api/content-plan', contentPlanRoutes);
 app.use('/api/business-dashboard', businessDashboardRoutes);
+app.use('/api/test-upload', testUploadRoutes);
+app.use('/api/auto-pipeline', channelRateLimit, autoPipelineRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/', (_req, res) => {
   res.json({
@@ -376,6 +390,17 @@ app.get('/', (_req, res) => {
   });
 });
 
+// Prometheus metrics endpoint
+app.get('/api/metrics', async (_req, res) => {
+  try {
+    const { getMetrics, getMetricsContentType } = require('./services/metrics.service');
+    res.setHeader('Content-Type', await getMetricsContentType());
+    res.send(await getMetrics());
+  } catch (err: any) {
+    res.status(500).json({ error: 'Metrics unavailable', message: err.message });
+  }
+});
+
 // Deep health check with MonitoringService (DB, Redis, memory, queues)
 app.get('/api/health/deep', async (req, res) => {
   const force = req.query.force === 'true';
@@ -391,17 +416,6 @@ app.get('/api/health/deep', async (req, res) => {
       version: '1.0.0',
       error: err.message,
     });
-  }
-});
-
-// Prometheus metrics endpoint
-app.get('/api/metrics', async (_req, res) => {
-  try {
-    const metrics = await MonitoringService.getPrometheusMetrics();
-    res.set('Content-Type', 'text/plain');
-    res.send(metrics);
-  } catch (err: any) {
-    res.status(500).send(`# Error generating metrics: ${err.message}\n`);
   }
 });
 
@@ -430,6 +444,9 @@ async function shutdown(signal: string) {
 
   try {
     if (workersStarted && typeof stopDeadLetterProcessing === 'function') stopDeadLetterProcessing();
+    await closeAllIncomeWorkers().catch(() => {});
+    autoScaling.stopAutoScaling();
+    workerHeartbeat.stopHeartbeat();
     logger.info('Workers drained. Closing connections...');
     await disconnectDatabase().catch(() => {});
     await disconnectRedis().catch(() => {});
@@ -456,7 +473,13 @@ process.on('uncaughtException', (err) => {
     logger.warn('Redis connection error (suppressing crash — ioredis will reconnect)', { error: errMsg, code: errCode });
     return;
   }
-  logger.error('Uncaught exception', { error: err.message, code: errCode, stack: err.stack });
+  logger.error('═══════════════════════════════════════');
+  logger.error('  UNCAUGHT EXCEPTION');
+  logger.error('═══════════════════════════════════════');
+  logger.error(`  Message: ${err.message}`);
+  logger.error(`  Code: ${errCode || 'N/A'}`);
+  logger.error(`  Stack: ${err.stack}`);
+  logger.error('═══════════════════════════════════════');
   shutdown('uncaughtException');
 });
 
@@ -464,14 +487,22 @@ process.on('unhandledRejection', (reason) => {
   const err = reason as any;
   const msg = err?.message || '';
   const code = err?.code || '';
-  const isQueueWorkerError = !msg && !code && typeof reason === 'object';
   const isRedisError = msg.includes('ECONNREFUSED') || msg.includes('Redis') || msg.includes('version') || code === 'ECONNREFUSED';
-  if (isQueueWorkerError || isRedisError) {
+  if (isRedisError) {
+    logger.warn('Unhandled rejection (Redis — non-fatal)', { reason: msg });
     return;
   }
-  if (msg) {
-    logger.warn('Unhandled rejection', { reason: msg });
+  const isQueueWorkerError = !msg && !code && typeof reason === 'object';
+  if (isQueueWorkerError) {
+    logger.warn('Unhandled rejection (queue worker — non-fatal)', { reason: String(reason) });
+    return;
   }
+  logger.error('═══════════════════════════════════════');
+  logger.error('  UNHANDLED REJECTION');
+  logger.error('═══════════════════════════════════════');
+  logger.error(`  Reason: ${msg || String(reason)}`);
+  if (err?.stack) logger.error(`  Stack: ${err.stack}`);
+  logger.error('═══════════════════════════════════════');
 });
 
 const PORT = process.env.PORT || 4000;
@@ -501,8 +532,27 @@ app.listen(PORT, async () => {
     await scheduleCleanupJobs().catch(err => logger.error('Failed to schedule cleanup jobs', { error: err.message }));
     initializeSchedulers();
     startDeadLetterProcessing();
+
+    // ─── Phase 2: Start DLQ retry processor ───────────────────────────────
+    try {
+      dlqManager.startRetryProcessor(30000);
+    } catch (err: any) {
+      logger.error('DLQ retry processor failed to start', { error: err.message });
+    }
+
+    // ─── Phase 2: Start auto-scaling engine ───────────────────────────────
+    autoScaling.startAutoScaling(60000);
+
+    // ─── Phase 2: Start storage auto-cleanup ──────────────────────────────
+    storageS3.scheduleAutoCleanup();
+
+    // ─── Phase 2: Register this API instance ──────────────────────────────
+    const instanceId = `api-${process.pid}-${Date.now()}`;
+    workerHeartbeat.registerInstance(instanceId, ['express']).catch(() => {});
+
+    logger.info('[Phase 2] DLQ retry, auto-scaling, storage cleanup initialized');
   } else {
-    logger.info('Redis unavailable — schedulers and dead-letter processing skipped.');
+    logger.info('Redis unavailable — Phase 2 background services skipped.');
   }
   logger.info(`╔═══════════════════════════════════════════╗`);
   logger.info(`║  YouTube AI Platform API                  ║`);

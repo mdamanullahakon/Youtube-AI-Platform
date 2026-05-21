@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { sanitizePrompt } from '../utils/prompt-sanitizer';
 import { estimateTokens } from '../utils/token-estimator';
 import { AIUsageService } from './ai-usage.service';
+import { aiBreaker, CircuitBreakerOpenError } from './circuit-breaker.service';
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -111,7 +112,7 @@ async function callOllama(prompt: string, config: AIConfig = {}): Promise<string
       },
       stream: false,
     },
-    { timeout: config.timeout || 180000 }
+    { timeout: config.timeout || 600000 }
   );
   return response.data.message.content;
 }
@@ -137,8 +138,8 @@ async function callProviderWithRetry(provider: AIModel, prompt: string, config: 
       throw Object.assign(new Error('Rate limit exceeded'), { response: { status: 429 } });
     }
     switch (provider) {
-      case 'gemini': return callGemini(prompt, config);
-      case 'ollama': return callOllama(prompt, config);
+      case 'gemini': return aiBreaker().call(() => callGemini(prompt, config));
+      case 'ollama': return aiBreaker().call(() => callOllama(prompt, config));
     }
   };
   return withRetry(fn, RETRY_ATTEMPTS, RETRY_BASE_DELAY);

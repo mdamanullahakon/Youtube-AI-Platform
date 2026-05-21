@@ -27,7 +27,8 @@
     "db:drift": "powershell -ExecutionPolicy Bypass -File scripts/db.ps1 drift",
     "db:status": "powershell -ExecutionPolicy Bypass -File scripts/db.ps1 status",
 
-    "start": "start-all.bat",
+    "start": "node scripts/start-all.js",
+    "start:all": "node scripts/start-all.js",
     "orchestrate": "node scripts/dev-orchestrator.js",
     "health": "node scripts/health-monitor.js",
     "health:watch": "node scripts/health-monitor.js --watch",

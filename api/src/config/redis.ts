@@ -2,7 +2,6 @@ import IORedis, { RedisOptions } from 'ioredis';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 const maxRetries = parseInt(process.env.REDIS_MAX_RETRIES || '10', 10);
-const isProduction = process.env.NODE_ENV === 'production';
 const tlsEnabled = process.env.REDIS_TLS_ENABLED === 'true';
 
 const redisOptions: RedisOptions = {
@@ -35,18 +34,34 @@ if (tlsEnabled) {
   redisOptions.port = parseInt(process.env.REDIS_PORT || '6380', 10);
 }
 
-// Patch BullMQ RedisConnection to accept older Redis versions
-try {
-  const bullmqPath = require.resolve('bullmq/dist/cjs/classes/redis-connection');
-  const { RedisConnection: BullMqRedisConnection } = require(bullmqPath);
-  if (BullMqRedisConnection?.minimumVersion > '3.0.0') {
-    BullMqRedisConnection.minimumVersion = '3.2.0';
+export const redisConnection = new IORedis(REDIS_URL, redisOptions);
+
+let _redisMajorVersion: number | null = null;
+
+export async function detectRedisVersion(): Promise<number> {
+  if (_redisMajorVersion !== null) return _redisMajorVersion;
+  try {
+    if (redisConnection.status !== 'ready') {
+      await redisConnection.connect();
+    }
+    const info = await redisConnection.info('server');
+    const match = info.match(/redis_version:(\d+)\.\d+\.\d+/);
+    _redisMajorVersion = match ? parseInt(match[1], 10) : 0;
+    console.log(`[Redis] Detected version: ${match ? match[0] : 'unknown'}`);
+  } catch (err: any) {
+    console.error(`[Redis] Version detection failed: ${err.message}`);
+    _redisMajorVersion = 0;
   }
-} catch {
-  // BullMQ not yet installed or different version layout
+  return _redisMajorVersion;
 }
 
-export const redisConnection = new IORedis(REDIS_URL, redisOptions);
+export function getRedisMajorVersion(): number | null {
+  return _redisMajorVersion;
+}
+
+export function isRedisCompatible(): boolean {
+  return _redisMajorVersion !== null && _redisMajorVersion >= 5;
+}
 
 redisConnection.on('connect', () => {
   console.log('[Redis] Connected');
@@ -57,7 +72,12 @@ redisConnection.on('ready', () => {
 });
 
 redisConnection.on('error', (err: Error) => {
-  console.error('[Redis] Error:', err.message);
+  const msg = err.message || '';
+  if (msg.includes('ECONNREFUSED') || msg.includes('ENETUNREACH')) {
+    console.warn('[Redis] Connection refused — will retry automatically');
+  } else {
+    console.error('[Redis] Error:', msg);
+  }
 });
 
 redisConnection.on('close', () => {
@@ -70,6 +90,7 @@ redisConnection.on('reconnecting', (delay: number) => {
 
 redisConnection.on('end', () => {
   console.error('[Redis] Connection ended (all retries exhausted)');
+  console.warn('[Redis] Queue features will be unavailable until Redis is restarted');
 });
 
 // Graceful shutdown

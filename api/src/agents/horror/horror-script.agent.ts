@@ -142,7 +142,7 @@ async function generateHorrorActs(
       '[payoff text]',
     ].join('\n');
 
-    const result = await generateWithAI(prompt, 'ollama', { temperature: 0.8, timeout: 180000 });
+    const result = await generateWithAI(prompt, 'ollama', { temperature: 0.8, timeout: 600000 });
     return parseActs(result) || defaultActs();
   } catch {
     return defaultActs();

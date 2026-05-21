@@ -13,9 +13,26 @@ const csp = `
 `.replace(/\s{2,}/g, ' ').trim();
 
 const nextConfig: NextConfig = {
-  turbopack: {
-    resolveAlias: {},
+  // Turbopack is default in Next.js 16 but has Windows EPERM issues with file renames.
+  // Use --webpack CLI flag to force webpack (stable on Windows).
+  // The turbopack config key is removed to avoid ambiguity.
+
+  // Disable Turbopack filesystem cache to prevent EPERM lock issues
+  experimental: {
+    turbopackFileSystemCacheForDev: false,
   },
+
+  // Disable generateEtags to reduce file writes during dev
+  generateEtags: false,
+
+  // Reduce file system operations on Windows
+  onDemandEntries: {
+    maxInactiveAge: 60 * 60 * 1000,
+    pagesBufferLength: 5,
+  },
+
+  serverExternalPackages: ['@tanstack/react-query', 'zustand'],
+
   async headers() {
     return [
       {

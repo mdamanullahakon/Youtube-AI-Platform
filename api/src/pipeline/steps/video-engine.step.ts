@@ -28,22 +28,20 @@ export class VideoEngineStep extends PipelineStep<VideoEngineInput, VideoEngineO
       throw new Error('No scenes could be parsed from the script');
     }
 
-    // Enforce emotional story arc
     const arcScenes = this.viralQuality.enforceEmotionalArc(scenes);
-
-    // Optimize scene pacing for retention
     const optimizedScenes = this.viralQuality.optimizeScenePacing(arcScenes);
 
-    // Validate hook in first scene
     const hookCheck = this.viralQuality.validateHook(optimizedScenes[0].text);
     if (!hookCheck.valid) {
-      logger.warn(`[VideoEngine] Hook validation score ${hookCheck.score} — issues: ${hookCheck.issues.join(', ')}`);
-      // Prepend a forced hook scene
+      logger.warn(`[VideoEngine] Hook validation score ${hookCheck.score} - issues: ${hookCheck.issues.join(', ')}`);
       const hookText = this.viralQuality.generateHook(input.topic, []).text;
-      optimizedScenes.unshift({ text: hookText, duration: 8, visualPrompt: 'dramatic hook establishing shot' });
+      optimizedScenes.unshift({
+        text: hookText,
+        duration: 8,
+        visualPrompt: 'dramatic hook establishing shot',
+      });
     }
 
-    // Validate visual variety
     const visualsCheck = this.viralQuality.checkVisualVariety(optimizedScenes);
     if (!visualsCheck.valid) {
       logger.warn(`[VideoEngine] Visual variety issue: ${visualsCheck.issues.join('; ')}`);
@@ -58,26 +56,30 @@ export class VideoEngineStep extends PipelineStep<VideoEngineInput, VideoEngineO
           : 'story';
 
     const outputPath = path.join(process.cwd(), 'uploads', 'videos', `${input.projectId}.mp4`);
+
+    // voiceoverPath from input may be relative; resolve to absolute
+    let voiceoverPath: string | undefined;
+    if (input.voiceover?.audioUrl) {
+      const absPath = path.join(process.cwd(), input.voiceover.audioUrl.replace(/^\//, ''));
+      const { existsSync } = await import('fs');
+      if (existsSync(absPath)) {
+        voiceoverPath = absPath;
+      }
+    }
+
     const videoUrl = await renderVideo({
       scenes: optimizedScenes,
       topic: input.topic,
       title: input.topic,
-      voiceoverPath: input.voiceover.audioUrl || undefined,
+      voiceoverPath,
       outputPath,
       mood: moodFromTopic,
     });
 
     await prisma.videoRender.upsert({
       where: { projectId: input.projectId },
-      update: {
-        videoUrl,
-        status: 'completed',
-      },
-      create: {
-        projectId: input.projectId,
-        videoUrl,
-        status: 'completed',
-      },
+      update: { videoUrl, status: 'completed' },
+      create: { projectId: input.projectId, videoUrl, status: 'completed' },
     });
 
     await prisma.videoProject.update({

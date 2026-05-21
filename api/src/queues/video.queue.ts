@@ -1,7 +1,6 @@
 import { Queue, QueueEvents } from 'bullmq';
 import { redisConnection } from '../config/redis';
 
-// ─── Typed Job Data Interfaces ────────────────────
 export interface TrendJobData {
   projectId: string;
   topic: string;
@@ -72,7 +71,6 @@ export type JobData =
   | PipelineJobData
   | TranscriptJobData;
 
-// ─── Dead-Letter Queue Names ─────────────────────
 const DLQ_SUFFIX = '-dlq';
 
 export const DLQ_NAMES = {
@@ -87,7 +85,6 @@ export const DLQ_NAMES = {
   cleanup: `cleanup${DLQ_SUFFIX}`,
 } as const;
 
-// ─── Standardized Job Options (all include timeout) ─
 export const STANDARD_JOB_OPTS = {
   attempts: 3,
   backoff: { type: 'exponential', delay: 2000 } as const,
@@ -97,8 +94,8 @@ export const STANDARD_JOB_OPTS = {
 };
 
 export const RENDER_JOB_OPTS = {
-  attempts: 5,
-  backoff: { type: 'exponential', delay: 5000 } as const,
+  attempts: 4,
+  backoff: { type: 'exponential', delay: 10000 } as const,
   timeout: 600_000,
   removeOnComplete: { age: 86400, count: 100 },
   removeOnFail: { age: 86400 * 7, count: 50 },
@@ -120,97 +117,27 @@ export const CLEANUP_JOB_OPTS = {
   removeOnFail: { age: 86400, count: 10 },
 };
 
-// ─── Lazy Queue/Events Factory ───────────────────
-// Prevents BullMQ from connecting at module import time.
-// Queues are only materialized when first accessed.
-const queueInstances = new Map<string, Queue>();
-const eventsInstances = new Map<string, QueueEvents>();
-const dlqInstances = new Map<string, Queue>();
-
-function lazyQueue(name: string, opts: any): Queue {
-  let inst: Queue | null = null;
-  return new Proxy({} as Queue, {
-    get(_, prop) {
-      if (!inst) {
-        inst = new Queue(name, opts);
-        queueInstances.set(name, inst);
-      }
-      return (inst as any)[prop];
-    },
+function mkQueue(name: string, defaultJobOptions: any): Queue {
+  return new Queue(name, {
+    connection: redisConnection,
+    defaultJobOptions,
   });
 }
 
-function lazyQueueEvents(name: string, opts: any): QueueEvents {
-  let inst: QueueEvents | null = null;
-  return new Proxy({} as QueueEvents, {
-    get(_, prop) {
-      if (!inst) {
-        inst = new QueueEvents(name, opts);
-        eventsInstances.set(name, inst);
-      }
-      return (inst as any)[prop];
-    },
-  });
+function mkEvents(name: string): QueueEvents {
+  return new QueueEvents(name, { connection: redisConnection });
 }
 
-function lazyDLQ(name: string, opts: any): Queue {
-  let inst: Queue | null = null;
-  return new Proxy({} as Queue, {
-    get(_, prop) {
-      if (!inst) {
-        inst = new Queue(name, opts);
-        dlqInstances.set(name, inst);
-      }
-      return (inst as any)[prop];
-    },
-  });
-}
-
-// ─── Queue Definitions ───────────────────────────
-export const videoQueue = lazyQueue('video-generation', {
-  connection: redisConnection,
-  defaultJobOptions: STANDARD_JOB_OPTS,
-});
-
-export const trendQueue = lazyQueue('trend-analysis', {
-  connection: redisConnection,
-  defaultJobOptions: STANDARD_JOB_OPTS,
-});
-
-export const scriptQueue = lazyQueue('script-generation', {
-  connection: redisConnection,
-  defaultJobOptions: STANDARD_JOB_OPTS,
-});
-
-export const agentQueue = lazyQueue('agent-tasks', {
-  connection: redisConnection,
-  defaultJobOptions: STANDARD_JOB_OPTS,
-});
-
-export const renderQueue = lazyQueue('video-render', {
-  connection: redisConnection,
-  defaultJobOptions: RENDER_JOB_OPTS,
-});
-
-export const uploadQueue = lazyQueue('youtube-upload', {
-  connection: redisConnection,
-  defaultJobOptions: UPLOAD_JOB_OPTS,
-});
-
-export const analyticsQueue = lazyQueue('analytics-collection', {
-  connection: redisConnection,
-  defaultJobOptions: STANDARD_JOB_OPTS,
-});
-
-export const transcriptQueue = lazyQueue('transcript-analysis', {
-  connection: redisConnection,
-  defaultJobOptions: { ...STANDARD_JOB_OPTS, attempts: 3 },
-});
-
-export const cleanupQueue = lazyQueue('cleanup', {
-  connection: redisConnection,
-  defaultJobOptions: CLEANUP_JOB_OPTS,
-});
+// ─── Main Queues ────────────────────────────────
+export const videoQueue = mkQueue('video-generation', STANDARD_JOB_OPTS);
+export const trendQueue = mkQueue('trend-analysis', STANDARD_JOB_OPTS);
+export const scriptQueue = mkQueue('script-generation', STANDARD_JOB_OPTS);
+export const agentQueue = mkQueue('agent-tasks', STANDARD_JOB_OPTS);
+export const renderQueue = mkQueue('video-render', RENDER_JOB_OPTS);
+export const uploadQueue = mkQueue('youtube-upload', UPLOAD_JOB_OPTS);
+export const analyticsQueue = mkQueue('analytics-collection', STANDARD_JOB_OPTS);
+export const transcriptQueue = mkQueue('transcript-analysis', STANDARD_JOB_OPTS);
+export const cleanupQueue = mkQueue('cleanup', CLEANUP_JOB_OPTS);
 
 // ─── Dead-Letter Queues ──────────────────────────
 const DLQ_JOB_OPTS = {
@@ -218,29 +145,33 @@ const DLQ_JOB_OPTS = {
   removeOnFail: { age: 86400 * 7, count: 200 },
 };
 
+function mkDLQ(name: string): Queue {
+  return new Queue(name, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS });
+}
+
 export const deadLetterQueues = {
-  video: lazyDLQ(DLQ_NAMES.video, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
-  trend: lazyDLQ(DLQ_NAMES.trend, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
-  script: lazyDLQ(DLQ_NAMES.script, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
-  agent: lazyDLQ(DLQ_NAMES.agent, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
-  render: lazyDLQ(DLQ_NAMES.render, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
-  upload: lazyDLQ(DLQ_NAMES.upload, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
-  analytics: lazyDLQ(DLQ_NAMES.analytics, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
-  transcript: lazyDLQ(DLQ_NAMES.transcript, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
-  cleanup: lazyDLQ(DLQ_NAMES.cleanup, { connection: redisConnection, defaultJobOptions: DLQ_JOB_OPTS }),
+  video: mkDLQ(DLQ_NAMES.video),
+  trend: mkDLQ(DLQ_NAMES.trend),
+  script: mkDLQ(DLQ_NAMES.script),
+  agent: mkDLQ(DLQ_NAMES.agent),
+  render: mkDLQ(DLQ_NAMES.render),
+  upload: mkDLQ(DLQ_NAMES.upload),
+  analytics: mkDLQ(DLQ_NAMES.analytics),
+  transcript: mkDLQ(DLQ_NAMES.transcript),
+  cleanup: mkDLQ(DLQ_NAMES.cleanup),
 } as const;
 
 // ─── Queue Events ────────────────────────────────
 export const queueEvents = {
-  video: lazyQueueEvents('video-generation', { connection: redisConnection }),
-  trend: lazyQueueEvents('trend-analysis', { connection: redisConnection }),
-  script: lazyQueueEvents('script-generation', { connection: redisConnection }),
-  agent: lazyQueueEvents('agent-tasks', { connection: redisConnection }),
-  render: lazyQueueEvents('video-render', { connection: redisConnection }),
-  upload: lazyQueueEvents('youtube-upload', { connection: redisConnection }),
-  analytics: lazyQueueEvents('analytics-collection', { connection: redisConnection }),
-  transcript: lazyQueueEvents('transcript-analysis', { connection: redisConnection }),
-  cleanup: lazyQueueEvents('cleanup', { connection: redisConnection }),
+  video: mkEvents('video-generation'),
+  trend: mkEvents('trend-analysis'),
+  script: mkEvents('script-generation'),
+  agent: mkEvents('agent-tasks'),
+  render: mkEvents('video-render'),
+  upload: mkEvents('youtube-upload'),
+  analytics: mkEvents('analytics-collection'),
+  transcript: mkEvents('transcript-analysis'),
+  cleanup: mkEvents('cleanup'),
 };
 
 // ─── Lookup Tables ───────────────────────────────
@@ -291,7 +222,6 @@ export const dlqMap: Record<string, Queue> = {
   'cleanup': deadLetterQueues.cleanup,
 };
 
-// ─── All Queue Names (for monitoring) ────────────
 export const ALL_QUEUES = [
   { name: 'video-generation', queue: videoQueue, events: queueEvents.video, dlq: deadLetterQueues.video },
   { name: 'trend-analysis', queue: trendQueue, events: queueEvents.trend, dlq: deadLetterQueues.trend },
@@ -303,12 +233,3 @@ export const ALL_QUEUES = [
   { name: 'transcript-analysis', queue: transcriptQueue, events: queueEvents.transcript, dlq: deadLetterQueues.transcript },
   { name: 'cleanup', queue: cleanupQueue, events: queueEvents.cleanup, dlq: deadLetterQueues.cleanup },
 ] as const;
-
-// ─── Accessor for real instances (for shutdown) ───
-export function getMaterializedQueues(): Queue[] {
-  return Array.from(queueInstances.values());
-}
-
-export function getMaterializedEvents(): QueueEvents[] {
-  return Array.from(eventsInstances.values());
-}

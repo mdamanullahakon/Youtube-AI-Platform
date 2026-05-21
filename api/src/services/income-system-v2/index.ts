@@ -19,6 +19,7 @@ export {
   incomeQueues,
   INCOME_QUEUE_NAMES,
   closeAllIncomeQueues,
+  incomeQueueEvents,
 } from './income.queue';
 
 export {
@@ -26,4 +27,14 @@ export {
   closeAllIncomeWorkers,
 } from './income.workers';
 
-export { IncomeTopicScore, IncomeVideoPlan, IncomeChannelConfig, IncomeWinnerVideo, IncomeWinningPattern, IncomeAnalyticsSnapshot, IncomeUploadResult, IncomeCycleResult, IncomeRiskAlert, IncomeTopicJobData, IncomeContentJobData, IncomeMonetizationJobData, IncomeUploadJobData, IncomeAnalyticsJobData, IncomeLearningJobData, IncomeRiskJobData, IncomeCycleJobData, INCOME_SYSTEM_QUEUES, DEFAULT_VIDEOS_PER_DAY, EARLY_ANALYTICS_DELAY_MIN, FULL_ANALYTICS_DELAY_MIN, MIN_CTR_THRESHOLD, MIN_RETENTION_THRESHOLD } from './types';
+export {
+  IncomeTopicScore, IncomeVideoPlan, IncomeChannelConfig,
+  IncomeWinnerVideo, IncomeWinningPattern, IncomeAnalyticsSnapshot,
+  IncomeUploadResult, IncomeCycleResult, IncomeRiskAlert,
+  IncomeTopicJobData, IncomeContentJobData, IncomeMonetizationJobData,
+  IncomeUploadJobData, IncomeAnalyticsJobData, IncomeLearningJobData,
+  IncomeRiskJobData, IncomeCycleJobData,
+  INCOME_SYSTEM_QUEUES,
+  DEFAULT_VIDEOS_PER_DAY, EARLY_ANALYTICS_DELAY_MIN,
+  FULL_ANALYTICS_DELAY_MIN, MIN_CTR_THRESHOLD, MIN_RETENTION_THRESHOLD,
+} from './types';

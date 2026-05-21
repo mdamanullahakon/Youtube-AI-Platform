@@ -1,4 +1,4 @@
-import winston from 'winston';
+import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
 
@@ -9,93 +9,75 @@ if (!fs.existsSync(logDir)) {
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-const consoleFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  isProduction
-    ? winston.format.json()
-    : winston.format.colorize(),
-  winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    if (isProduction) {
-      return JSON.stringify({ timestamp, level, message, ...meta });
-    }
-    const metaStr = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : '';
-    return `[${timestamp}] [${level}]: ${message}${metaStr}`;
-  })
+const fileTransport = pino.transport({
+  targets: [
+    {
+      target: 'pino/file',
+      options: {
+        destination: path.join(logDir, 'api.log'),
+        mkdir: true,
+      },
+    },
+    {
+      target: 'pino/file',
+      options: {
+        destination: path.join(logDir, 'api-error.log'),
+        mkdir: true,
+      },
+      level: 'error',
+    },
+  ],
+});
+
+const baseLogger = pino(
+  {
+    level: process.env.LOG_LEVEL || (isProduction ? 'info' : 'debug'),
+    serializers: {
+      err: pino.stdSerializers.err,
+      req: pino.stdSerializers.req,
+      res: pino.stdSerializers.res,
+    },
+    redact: {
+      paths: [
+        'req.headers.authorization', 'req.headers.cookie',
+        'body.password', 'body.token', 'body.accessToken', 'body.refreshToken',
+      ],
+      censor: '[REDACTED]',
+    },
+    timestamp: pino.stdTimeFunctions.isoTime,
+  },
+  fileTransport,
 );
 
-const createLogger = (name: string, level?: string) => {
-  const transports: winston.transport[] = [
-    new winston.transports.Console({ format: consoleFormat }),
-  ];
+interface LoggerInstance {
+  info: (msg: string, meta?: any) => void;
+  warn: (msg: string, meta?: any) => void;
+  error: (msg: string, meta?: any) => void;
+  debug: (msg: string, meta?: any) => void;
+  child: (bindings: Record<string, unknown>) => LoggerInstance;
+}
 
-  if (isProduction) {
-    // Production: daily rotating files
-    try {
-      const DailyRotateFile = require('winston-daily-rotate-file');
-      transports.push(
-        new DailyRotateFile({
-          filename: path.join(logDir, `${name}-%DATE%.log`),
-          datePattern: 'YYYY-MM-DD',
-          maxSize: '20m',
-          maxFiles: '14d',
-          format: winston.format.json(),
-        })
-      );
-      transports.push(
-        new DailyRotateFile({
-          filename: path.join(logDir, `${name}-error-%DATE%.log`),
-          datePattern: 'YYYY-MM-DD',
-          level: 'error',
-          maxSize: '20m',
-          maxFiles: '30d',
-          format: winston.format.json(),
-        })
-      );
-    } catch {
-      transports.push(
-        new winston.transports.File({
-          filename: path.join(logDir, `${name}.log`),
-          maxsize: 5242880,
-          maxFiles: 5,
-        }),
-        new winston.transports.File({
-          filename: path.join(logDir, `${name}-error.log`),
-          level: 'error',
-          maxsize: 5242880,
-          maxFiles: 10,
-        })
-      );
+function wrapPino(pinoInstance: pino.Logger): LoggerInstance {
+  const log = (level: string, msg: string, meta?: any) => {
+    if (meta !== undefined && meta !== null) {
+      (pinoInstance as any)[level](meta instanceof Error ? { err: meta } : meta, msg);
+    } else {
+      (pinoInstance as any)[level](msg);
     }
-  } else {
-    // Development: simple file rotation with size caps
-    transports.push(
-      new winston.transports.File({
-        filename: path.join(logDir, `${name}.log`),
-        maxsize: 1048576,
-        maxFiles: 3,
-        tailable: true,
-      }),
-      new winston.transports.File({
-        filename: path.join(logDir, `${name}-error.log`),
-        level: 'error',
-        maxsize: 1048576,
-        maxFiles: 3,
-        tailable: true,
-      })
-    );
-  }
+  };
 
-  return winston.createLogger({
-    level: level || (isProduction ? 'info' : 'debug'),
-    format: winston.format.json(),
-    defaultMeta: { service: name },
-    transports,
-  });
-};
+  return {
+    info: (msg: string, meta?: Record<string, unknown>) => log('info', msg, meta),
+    warn: (msg: string, meta?: Record<string, unknown>) => log('warn', msg, meta),
+    error: (msg: string, meta?: Record<string, unknown>) => log('error', msg, meta),
+    debug: (msg: string, meta?: Record<string, unknown>) => log('debug', msg, meta),
+    child: (bindings: Record<string, unknown>): LoggerInstance => wrapPino(pinoInstance.child(bindings)),
+  };
+}
 
-export const apiLogger = createLogger('api', process.env.LOG_LEVEL);
-export const aiLogger = createLogger('ai', 'info');
-export const queueLogger = createLogger('queue', 'info');
-export const pipelineLogger = createLogger('pipeline', 'info');
+export const apiLogger = wrapPino(baseLogger.child({ service: 'api' }));
+export const aiLogger = wrapPino(baseLogger.child({ service: 'ai' }));
+export const queueLogger = wrapPino(baseLogger.child({ service: 'queue' }));
+export const pipelineLogger = wrapPino(baseLogger.child({ service: 'pipeline' }));
 
 export const logger = apiLogger;

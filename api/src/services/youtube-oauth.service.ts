@@ -17,7 +17,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 const BASE_RETRY_DELAY = 1000;
 
 const tokenRefreshLocks = new Map<string, Promise<unknown>>();
@@ -203,7 +203,9 @@ export async function handleCallback(code: string, state: string) {
     logger.warn('Token expiry not provided by Google, defaulting to +1 hour');
   }
 
-  const refreshTokenValue = encryptedRefresh || 'no_refresh_token_provided';
+  if (!encryptedRefresh) {
+    logger.warn('[UPLOAD_TRACE] Google did not return a refresh_token — checking DB for existing token');
+  }
 
   await prisma.youTubeAccount.upsert({
     where: { userId_channelId: { userId: user.id, channelId: channel.id } },
@@ -223,7 +225,7 @@ export async function handleCallback(code: string, state: string) {
       channelTitle: channel.snippet?.title || 'Unknown Channel',
       channelAvatar: channel.snippet?.thumbnails?.default?.url || null,
       accessToken: encryptedAccess,
-      refreshToken: refreshTokenValue,
+      refreshToken: encryptedRefresh || '',
       tokenExpiresAt: new Date(tokens.expiry_date || Date.now() + 3600000),
       scope: tokens.scope || SCOPES.join(' '),
     },
@@ -522,10 +524,17 @@ export async function refreshAllChannelTokens(userId: string) {
 }
 
 export async function getAuthenticatedClient(userId: string, channelId?: string) {
-  const where: any = { userId, isConnected: true };
+  let account: any = null;
+
   if (channelId) {
-    where.channelId = channelId;
-  } else {
+    account = await prisma.youTubeAccount.findFirst({
+      where: { channelId, isConnected: true },
+    });
+    logger.info(`[UPLOAD_TRACE] getAuthenticatedClient — channelId lookup: ${account ? 'FOUND' : 'NOT FOUND'} (channelId: ${channelId})`);
+  }
+
+  if (!account) {
+    const where: any = { userId, isConnected: true };
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { activeChannelId: true },
@@ -533,24 +542,37 @@ export async function getAuthenticatedClient(userId: string, channelId?: string)
     if (user?.activeChannelId) {
       where.id = user.activeChannelId;
     }
+    account = await prisma.youTubeAccount.findFirst({ where });
+    logger.info(`[UPLOAD_TRACE] getAuthenticatedClient — userId lookup: ${account ? 'FOUND' : 'NOT FOUND'} (userId: ${userId})`);
   }
 
-  const account = await prisma.youTubeAccount.findFirst({ where });
   if (!account) {
-    throw new Error('No connected YouTube account found. Please connect your YouTube channel first.');
+    throw new Error('No connected YouTube account found. Connect your YouTube channel in Settings first.');
+  }
+
+  if (!account.refreshToken) {
+    logger.warn(`[UPLOAD_TRACE] YouTube account ${account.id} has no refreshToken stored — reconnect required`);
+    throw new Error(
+      'Your YouTube connection is missing a refresh token. ' +
+      'Please reconnect your YouTube channel in Settings and ensure you grant offline access.'
+    );
   }
 
   if (Date.now() >= account.tokenExpiresAt.getTime() - 300000) {
+    logger.info(`[UPLOAD_TRACE] Token expired or expiring soon for account ${account.id} — refreshing...`);
     await withMutex(`refresh:${account.id}`, async () => {
       const latest = await prisma.youTubeAccount.findUnique({ where: { id: account.id } });
       if (latest && Date.now() >= latest.tokenExpiresAt.getTime() - 300000) {
-        await refreshChannelToken(account.id, userId);
+        await refreshChannelToken(account.id, account.userId);
       }
     });
   }
 
   const refreshed = await prisma.youTubeAccount.findUnique({ where: { id: account.id } });
   if (!refreshed) throw new Error('Failed to read account after token refresh');
+
+  const hasRefreshToken = !!refreshed.refreshToken;
+  logger.info(`[UPLOAD_TRACE] Tokens loaded — accountId: ${account.id}, hasRefreshToken: ${hasRefreshToken}, expiresAt: ${refreshed.tokenExpiresAt}`);
 
   const oauth2Client = await getOAuth2Client();
   oauth2Client.setCredentials({

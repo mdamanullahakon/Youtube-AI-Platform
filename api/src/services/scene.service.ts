@@ -1,7 +1,6 @@
-import { generateWithAI } from './ai.service';
 import { logger } from '../utils/logger';
 import type { ParsedScene } from '../utils/helpers';
-import { extractJsonArray } from '../utils/parse-ai-response';
+import { ViralQualityEngine } from './viral-quality.service';
 
 export interface ScenePlan {
   index: number;
@@ -35,16 +34,55 @@ const THEME_PALETTES: SceneTheme[] = [
 
 const ZOOM_OPTIONS: ScenePlan['zoomDirection'][] = ['in', 'out', 'none', 'in', 'out'];
 
+// ─── SAFETY LIMITS ───────────────────────────────────────────────────────────
+const MAX_SCENE_DURATION = 16;
+const MIN_SCENE_DURATION = 6;
+const MAX_SCENES = 15;
+const MIN_SCENES = 3;
+
+const viralEngine = new ViralQualityEngine();
+
 export async function planScenes(scenes: ParsedScene[], topic?: string): Promise<ScenePlan[]> {
-  logger.info(`Planning ${scenes.length} scenes for video`);
+  logger.info(`[RENDER_TRACE] Planning ${scenes.length} scenes for video`);
+
+  // ─── EMPTY SCENE REJECTION ─────────────────────────────────────────────────
+  const nonEmptyScenes = scenes.filter(s => s.text.trim().length > 0);
+  if (nonEmptyScenes.length < scenes.length) {
+    logger.warn(`[RENDER_TRACE] Rejected ${scenes.length - nonEmptyScenes.length} empty scenes`);
+  }
+
+  if (nonEmptyScenes.length < MIN_SCENES) {
+    throw new Error(`Too few non-empty scenes: ${nonEmptyScenes.length} (minimum ${MIN_SCENES} required)`);
+  }
+
+  const limitedScenes = nonEmptyScenes.slice(0, MAX_SCENES);
+  if (limitedScenes.length < nonEmptyScenes.length) {
+    logger.warn(`[RENDER_TRACE] Truncated to ${MAX_SCENES} scenes (was ${nonEmptyScenes.length})`);
+  }
+
+  let enrichedScenes = limitedScenes;
+
+  enrichedScenes = viralEngine.enforceEmotionalArc(enrichedScenes);
+  logger.info('[VIRAL_QUALITY] Emotional arc enforced');
+
+  enrichedScenes = viralEngine.optimizeScenePacing(enrichedScenes);
+  logger.info('[VIRAL_QUALITY] Scene pacing optimized');
+
+  const visualCheck = viralEngine.checkVisualVariety(enrichedScenes);
+  if (!visualCheck.valid) {
+    logger.warn(`[VIRAL_QUALITY] Visual variety issues: ${visualCheck.issues.join(', ')}`);
+  }
 
   const plans: ScenePlan[] = [];
   const topicLower = (topic || '').toLowerCase();
 
-  for (let i = 0; i < scenes.length; i++) {
-    const scene = scenes[i];
+  for (let i = 0; i < enrichedScenes.length; i++) {
+    const scene = enrichedScenes[i];
     const palette = selectPalette(i, themeIndexFromTopic(topicLower, i));
     const zoom = ZOOM_OPTIONS[i % ZOOM_OPTIONS.length];
+
+    // ─── SAFETY: enforce duration limits ────────────────────────────────────
+    const duration = Math.max(MIN_SCENE_DURATION, Math.min(scene.duration || 10, MAX_SCENE_DURATION));
 
     let subtitle = scene.text;
     if (subtitle.length > 80) {
@@ -55,20 +93,12 @@ export async function planScenes(scenes: ParsedScene[], topic?: string): Promise
       index: i,
       text: scene.text,
       subtitle,
-      duration: Math.max(6, Math.min(scene.duration || 10, 20)),
+      duration,
       bgColor: palette.bgColor,
       accentColor: palette.accentColor,
-      zoomDirection: zoom,
+      zoomDirection: duration < 4 ? 'none' : zoom,
       visualPrompt: scene.visualPrompt || palette.description,
     });
-  }
-
-  // Use AI to enhance scene descriptions if visualPrompt is generic
-  try {
-    const enhanced = await enhanceScenesWithAI(plans, topic);
-    if (enhanced) return enhanced;
-  } catch {
-    logger.warn('AI scene enhancement unavailable, using defaults');
   }
 
   return plans;
@@ -85,43 +115,4 @@ function themeIndexFromTopic(topic: string, seed: number): number {
     hash = ((hash << 5) - hash) + topic.charCodeAt(i);
   }
   return Math.abs(hash) % THEME_PALETTES.length;
-}
-
-async function enhanceScenesWithAI(plans: ScenePlan[], topic?: string): Promise<ScenePlan[] | null> {
-  const firstPlan = plans[0];
-  if (!firstPlan) return null;
-
-  const prompt = `You are a video scene planner. For a faceless video about "${topic || 'content'}", analyze these scenes and respond with a JSON array ONLY (no other text).
-
-For each scene, provide:
-- "bgColor": a hex color (6 chars, no #) that fits the scene mood
-- "accentColor": a lighter/different hex color for gradients
-- "subtitle": a short subtitle text (max 80 chars) summarizing the scene
-
-Scenes:
-${plans.map((p, i) => `Scene ${i + 1}: "${p.text.substring(0, 100)}" (${p.duration}s)`).join('\n')}
-
-Return ONLY a JSON array: [{"bgColor":"...", "accentColor":"...", "subtitle":"..."}]`;
-
-  const response = await generateWithAI(prompt, 'ollama', { temperature: 0.3, timeout: 60000 });
-
-  try {
-    const enhancements = extractJsonArray<{ bgColor?: string; accentColor?: string; subtitle?: string }>(response);
-
-    if (enhancements && enhancements.length === plans.length) {
-      return plans.map((plan, i) => {
-        const e = enhancements[i];
-        return {
-          ...plan,
-          bgColor: e.bgColor && /^[0-9a-f]{6}$/i.test(e.bgColor) ? e.bgColor : plan.bgColor,
-          accentColor: e.accentColor && /^[0-9a-f]{6}$/i.test(e.accentColor) ? e.accentColor : plan.accentColor,
-          subtitle: e.subtitle || plan.subtitle,
-        };
-      });
-    }
-  } catch {
-    // AI response wasn't valid JSON, use defaults
-  }
-
-  return null;
 }

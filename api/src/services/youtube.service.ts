@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { env } from '../config/env';
+import { Auth } from 'googleapis';
 import { logger } from '../utils/logger';
 import { getAuthenticatedClient } from './youtube-oauth.service';
-import { prisma } from '../config/db';
 import { google } from 'googleapis';
+import { youtubeBreaker, CircuitBreakerOpenError } from './circuit-breaker.service';
 
 interface YouTubeUploadOptions {
   title: string;
@@ -13,9 +14,11 @@ interface YouTubeUploadOptions {
   privacyStatus?: 'public' | 'private' | 'unlisted';
   videoPath: string;
   thumbnailPath?: string;
-  userId?: string;
+  userId: string;
   channelId?: string;
 }
+
+type YouTubeClient = ReturnType<typeof google.youtube>;
 
 export class YouTubeAuthError extends Error {
   constructor(message: string) {
@@ -25,81 +28,44 @@ export class YouTubeAuthError extends Error {
 }
 
 export async function uploadToYouTube(options: YouTubeUploadOptions): Promise<string> {
-  const { createReadStream } = await import('fs');
-  const { default: FormData } = await import('form-data');
+  const { createReadStream, existsSync } = await import('fs');
 
-  let accessToken: string | null = null;
-  let lastOAuthError: string | null = null;
-
-  // Try channel-specific auth first
-  if (options.channelId && options.userId) {
-    try {
-      const account = await prisma.youTubeAccount.findFirst({
-        where: { userId: options.userId, channelId: options.channelId, isConnected: true },
-      });
-      if (account) {
-        const oauth2Client = await getAuthenticatedClient(options.userId);
-        const token = await oauth2Client.getAccessToken();
-        accessToken = token?.token || null;
-      }
-    } catch (err: any) {
-      lastOAuthError = err.message;
-      logger.warn('Failed to get OAuth token from channel account', { error: err.message, channelId: options.channelId });
-    }
+  if (!options.userId) {
+    throw new YouTubeAuthError('No userId provided — cannot authenticate with YouTube');
   }
 
-  // Fallback: user-level OAuth
-  if (!accessToken && options.userId) {
-    try {
-      const oauth2Client = await getAuthenticatedClient(options.userId);
-      const token = await oauth2Client.getAccessToken();
-      accessToken = token?.token || null;
-    } catch (err: any) {
-      lastOAuthError = err.message;
-      logger.warn('Failed to get OAuth token from connected account', { error: err.message });
-    }
+  if (!existsSync(options.videoPath)) {
+    throw new Error(`Video file not found at path: ${options.videoPath}`);
   }
+  logger.info(`[UPLOAD_TRACE] Video file exists: ${options.videoPath}`);
 
-  if (!accessToken) {
-    accessToken = await getAccessTokenFromEnv();
-  }
-
-  if (!accessToken) {
-    const message = lastOAuthError
-      ? `No valid YouTube OAuth token: ${lastOAuthError}. Reconnect your YouTube channel in Settings.`
-      : 'No valid YouTube OAuth token available. Connect a YouTube channel in Settings, or configure YOUTUBE_REFRESH_TOKEN in .env.';
-    throw new YouTubeAuthError(message);
-  }
+  let oauth2Client: Auth.OAuth2Client;
 
   try {
-    const { google } = await import('googleapis');
-    const authClient = new google.auth.OAuth2(
-      process.env.YOUTUBE_CLIENT_ID,
-      process.env.YOUTUBE_CLIENT_SECRET,
+    oauth2Client = await getAuthenticatedClient(options.userId, options.channelId);
+  } catch (err: any) {
+    throw new YouTubeAuthError(
+      'Connect your YouTube channel in Settings first. ' +
+      `(Details: ${err.message})`
     );
-    authClient.setCredentials({ access_token: accessToken });
+  }
 
-    const youtube = google.youtube({ version: 'v3', auth: authClient });
-    const response = await youtube.videos.insert({
-      part: ['snippet', 'status'],
-      requestBody: {
-        snippet: {
-          title: options.title,
-          description: options.description,
-          tags: options.tags,
-          categoryId: options.categoryId || '22',
-        },
-        status: {
-          privacyStatus: options.privacyStatus || 'public',
-        },
-      },
-      media: {
-        body: createReadStream(options.videoPath),
-      },
-    });
+  logger.info(`[UPLOAD_TRACE] Tokens loaded — YouTube auth initialized for userId: ${options.userId}, channelId: ${options.channelId || 'default'}, video: ${options.videoPath}`);
+
+  try {
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+    const response = await youtubeBreaker().call(() => uploadVideo(youtube, options));
 
     const videoId = response.data.id;
     if (!videoId) throw new Error('Upload succeeded but no video ID returned');
+
+    logger.info('[UPLOAD_TRACE] YouTube upload response received', {
+      videoId,
+      status: response.status,
+      statusText: response.statusText,
+    });
+
+    logger.info(`[UPLOAD_TRACE] Video uploaded — videoId: ${videoId}`);
 
     if (options.thumbnailPath) {
       try {
@@ -110,7 +76,12 @@ export async function uploadToYouTube(options: YouTubeUploadOptions): Promise<st
           },
         });
       } catch (thumbError) {
-        logger.error('Thumbnail upload failed', thumbError);
+        logger.error('Thumbnail upload failed after video upload', {
+          videoId,
+          thumbnailPath: options.thumbnailPath,
+          error: thumbError instanceof Error ? thumbError.message : String(thumbError),
+        });
+        throw thumbError;
       }
     }
 
@@ -151,24 +122,34 @@ export async function uploadToYouTube(options: YouTubeUploadOptions): Promise<st
   }
 }
 
-async function getAccessTokenFromEnv(): Promise<string | null> {
-  try {
-    if (env.YOUTUBE_REFRESH_TOKEN) {
-      const response = await axios.post('https://oauth2.googleapis.com/token', {
-        client_id: env.YOUTUBE_CLIENT_ID,
-        client_secret: env.YOUTUBE_CLIENT_SECRET,
-        refresh_token: env.YOUTUBE_REFRESH_TOKEN,
-        grant_type: 'refresh_token',
-      }, {
-        timeout: 30000,
-      });
-      return response.data.access_token;
-    }
-    return null;
-  } catch (error) {
-    logger.error('Failed to get YouTube access token from env', error);
-    return null;
-  }
+async function uploadVideo(youtube: YouTubeClient, options: YouTubeUploadOptions) {
+  const { createReadStream } = await import('fs');
+
+  logger.info('[UPLOAD_TRACE] Calling youtube.videos.insert', {
+    title: options.title,
+    privacyStatus: options.privacyStatus || 'public',
+    categoryId: options.categoryId || '22',
+    videoPath: options.videoPath,
+    channelId: options.channelId || null,
+  });
+
+  return youtube.videos.insert({
+    part: ['snippet', 'status'],
+    requestBody: {
+      snippet: {
+        title: options.title,
+        description: options.description,
+        tags: options.tags,
+        categoryId: options.categoryId || '22',
+      },
+      status: {
+        privacyStatus: options.privacyStatus || 'public',
+      },
+    },
+    media: {
+      body: createReadStream(options.videoPath),
+    },
+  });
 }
 
 export async function postVideoComment(videoId: string, text: string, userId?: string): Promise<void> {
@@ -322,14 +303,14 @@ async function getYouTubeClient(userId?: string) {
     try {
       const auth = await getAuthenticatedClient(userId);
       return google.youtube({ version: 'v3', auth });
-    } catch {
-      // fallback to API key
+    } catch (err: any) {
+      logger.warn('getYouTubeClient: DB auth failed', { error: err.message });
+      throw new YouTubeAuthError(
+        'Connect your YouTube channel in Settings first. ' +
+        `(Details: ${err.message})`
+      );
     }
   }
 
-  if (env.YOUTUBE_API_KEY) {
-    return google.youtube({ version: 'v3' });
-  }
-
-  throw new Error('YouTube API not configured');
+  throw new YouTubeAuthError('No userId provided — cannot authenticate with YouTube');
 }
