@@ -485,7 +485,7 @@ export default function AuditPage() {
                         <PolarGrid stroke="#1a1a24" />
                         <PolarAngleAxis dataKey="category" tick={{ fill: '#71717a', fontSize: 10 }} />
                         <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#71717a', fontSize: 9 }} />
-                        <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => [`${value}%`, 'Score']} />
+                        <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${value ?? 0}%`, 'Score']} />
                         <Radar name="Score" dataKey="score" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.3} strokeWidth={2} />
                       </RadarChart>
                     </ResponsiveContainer>

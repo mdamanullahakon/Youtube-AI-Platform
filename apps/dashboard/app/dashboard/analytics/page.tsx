@@ -171,7 +171,7 @@ export default function AnalyticsPage() {
                       <span className="font-medium">{item.style || item.thumbnailStyle || `Style ${i + 1}`}</span>
                       <span className="text-primary font-bold">{item.ctr || item.predictedCTR || 0}% CTR</span>
                     </div>
-                    {item.impressions > 0 && <p className="text-xs text-muted">{item.impressions} impressions, {item.clicks} clicks</p>}
+                    {(item.impressions ?? 0) > 0 && <p className="text-xs text-muted">{item.impressions} impressions, {item.clicks} clicks</p>}
                     {item.performance && <p className={`text-xs mt-1 ${item.performance === 'excellent' ? 'text-green-400' : item.performance === 'good' ? 'text-blue-400' : 'text-yellow-400'}`}>{item.performance}</p>}
                   </div>
                 ))}
@@ -217,10 +217,10 @@ export default function AnalyticsPage() {
                 <div className="glow-card rounded-xl p-6">
                   <h3 className="text-lg font-semibold mb-4">Revenue Projections</h3>
                   <div className="space-y-2">
-                    {Object.entries(monetizationReport.projection).map(([period, amount]: [string, number | string]) => (
+                    {Object.entries(monetizationReport.projection).map(([period, amount]) => (
                       <div key={period} className="flex justify-between p-2 bg-card-border/30 rounded">
                         <span className="text-sm capitalize">{period}</span>
-                        <span className="text-sm font-medium text-primary">${typeof amount === 'number' ? amount.toFixed(2) : amount}</span>
+                        <span className="text-sm font-medium text-primary">${typeof amount === 'number' ? amount.toFixed(2) : String(amount)}</span>
                       </div>
                     ))}
                   </div>
