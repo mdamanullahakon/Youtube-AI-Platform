@@ -23,14 +23,26 @@ coverage:
         paths:
           - "api/src"
           - "apps/dashboard"
-      minimum:
+      api-minimum:
         target: 10%
         threshold: 0%
         base: auto
         strict: true
         flags:
           - api
+        paths:
+          - "api/src"
+        if_not_found: failure
+        informational: false
+      dashboard-minimum:
+        target: 10%
+        threshold: 0%
+        base: auto
+        strict: true
+        flags:
           - dashboard
+        paths:
+          - "apps/dashboard"
         if_not_found: failure
         informational: false
     patch:

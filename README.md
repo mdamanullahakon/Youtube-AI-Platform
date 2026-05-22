@@ -17,7 +17,16 @@ A full production-grade platform that researches, generates, renders, optimizes,
 
 This project uses [Codecov](https://about.codecov.io/) for automated coverage tracking, trend visualization, and PR commenting.
 
-Merged coverage from all workspaces (API + Dashboard) is uploaded via the CI pipeline.
+Coverage is uploaded **per workspace** — each workspace (API and Dashboard) has its own flag and minimum threshold, giving you separate visibility into each part of the codebase.
+
+#### Per-Workspace Tracking
+
+| Workspace | Codecov Flag | Minimum Coverage | Uploaded File |
+|-----------|-------------|-----------------|---------------|
+| API Backend | `api` | 10% | `api/coverage/lcov.info` |
+| Dashboard | `dashboard` | 10% | `apps/dashboard/coverage/lcov.info` |
+
+Both workspaces are uploaded in every CI run using separate Codecov upload steps. If either workspace drops below its 10% floor, CI fails with a clear status check.
 
 #### One-time Setup
 
@@ -31,9 +40,10 @@ Merged coverage from all workspaces (API + Dashboard) is uploaded via the CI pip
 
 Coverage behavior is configured in [`codecov.yml`](./codecov.yml):
 - **Components**: Tracks coverage separately for `api/src/` and `apps/dashboard/`
-- **Project threshold**: Coverage can drop up to 2% before failing the check
+- **Per-workspace minimums**: Each workspace has a 10% hard floor (`api-minimum` and `dashboard-minimum` status checks)
+- **Combined project threshold**: Coverage across both workspaces can drop up to 2% before failing the combined check
 - **Patch threshold**: New/changed code must maintain at least 10% of the base coverage
-- **PR comments**: Shows a summary diff with component breakdown
+- **PR comments**: Shows a summary diff with component breakdown and per-flag status
 
 ## Features
 
