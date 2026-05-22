@@ -50,3 +50,6 @@ export {
   incomeWorkers,
   closeAllIncomeWorkers,
 } from './income-system-v2';
+export { SeriesIntelligenceService } from './series-intelligence.service';
+export { ChannelAuditService } from './channel-audit.service';
+export { ChannelOptimizerService } from './channel-optimizer.service';

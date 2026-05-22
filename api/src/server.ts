@@ -35,6 +35,7 @@ import contentPlanRoutes from './routes/content-plan.routes';
 import businessDashboardRoutes from './routes/business-dashboard.routes';
 import testUploadRoutes from './routes/test-upload.routes';
 import autoPipelineRoutes from './routes/auto-pipeline.routes';
+import auditRoutes from './routes/audit.routes';
 
 import { errorHandler } from './middleware/errorHandler';
 import { requestTimeout } from './middleware/requestTimeout';
@@ -56,9 +57,11 @@ import { ALL_QUEUES, queueMap, dlqMap } from './queues/video.queue';
 import { queueLogger } from './utils/logger';
 import { scheduleCleanupJobs } from './workers/cleanup.worker';
 import { closeAllIncomeWorkers } from './services/income-system-v2/income.workers';
+import { isIncomeSystemEnabled } from './pipeline/canonical-pipeline.service';
 import { StorageManager } from './services/storage.service';
 import { storageGuard, storageGuardForRender } from './middleware/storageGuard';
 import { createCsrfMiddleware } from './middleware/csrf';
+import './config/env';
 import { disconnectDatabase } from './config/db';
 import { disconnectRedis, detectRedisVersion, isRedisCompatible } from './config/redis';
 import { validateEnvironment } from './utils/env-validator';
@@ -97,19 +100,31 @@ async function startWorkersIfRedisAvailable() {
 
   workersStarted = true;
 
-  // Lazy-import workers only when Redis is confirmed available
-  await Promise.allSettled([
+  // Canonical production path: video.worker runs sync PipelineOrchestrator only.
+  const workerImports: Promise<unknown>[] = [
     import('./workers/video.worker'),
-    import('./workers/trend.worker'),
-    import('./workers/script.worker'),
-    import('./workers/render.worker'),
     import('./workers/upload.worker'),
-    import('./workers/analytics.worker'),
-    import('./workers/agent.worker'),
-    import('./workers/transcript.worker'),
     import('./workers/cleanup.worker'),
-    import('./services/income-system-v2/income.workers'),
-  ]);
+    import('./workers/transcript.worker'),
+  ];
+
+  if (process.env.ENABLE_LEGACY_QUEUE_PIPELINE === 'true') {
+    queueLogger.warn('ENABLE_LEGACY_QUEUE_PIPELINE=true — loading deprecated step workers');
+    workerImports.push(
+      import('./workers/trend.worker'),
+      import('./workers/script.worker'),
+      import('./workers/render.worker'),
+      import('./workers/analytics.worker'),
+      import('./workers/agent.worker'),
+    );
+  }
+
+  if (isIncomeSystemEnabled()) {
+    queueLogger.info('ENABLE_INCOME_SYSTEM_V2=true — loading income workers');
+    workerImports.push(import('./services/income-system-v2/income.workers'));
+  }
+
+  await Promise.allSettled(workerImports);
 
   // Wire up dead-letter queue forwarding
   for (const { name, events, dlq } of ALL_QUEUES) {
@@ -141,14 +156,6 @@ async function startWorkersIfRedisAvailable() {
       }
     });
   }
-}
-
-// Load env with requireEnv validation (fatals if JWT secrets missing)
-try {
-  require('./config/env');
-} catch (err: any) {
-  console.error(`[FATAL] ${err.message}`);
-  process.exit(1);
 }
 
 // Validate critical environment variables on boot
@@ -277,6 +284,7 @@ app.use('/api/content-plan', contentPlanRoutes);
 app.use('/api/business-dashboard', businessDashboardRoutes);
 app.use('/api/test-upload', testUploadRoutes);
 app.use('/api/auto-pipeline', channelRateLimit, autoPipelineRoutes);
+app.use('/api/audit', channelRateLimit, auditRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.get('/', (_req, res) => {
@@ -372,6 +380,7 @@ app.get('/', (_req, res) => {
         'POST /api/ai-control/generate-video',
         'POST /api/ai-control/regenerate-script/:projectId',
       ],
+      audit: ['POST /api/audit/channel', 'POST /api/audit/optimize', 'GET /api/audit/status'],
       godmode: [
         'POST /api/godmode/initialize',
         'POST /api/godmode/scan',
@@ -393,7 +402,7 @@ app.get('/', (_req, res) => {
 // Prometheus metrics endpoint
 app.get('/api/metrics', async (_req, res) => {
   try {
-    const { getMetrics, getMetricsContentType } = require('./services/metrics.service');
+    const { getMetrics, getMetricsContentType } = await import('./services/metrics.service');
     res.setHeader('Content-Type', await getMetricsContentType());
     res.send(await getMetrics());
   } catch (err: any) {

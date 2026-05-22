@@ -1,8 +1,39 @@
 # YouTube AI Platform
 
+[![CI](https://github.com/mdamanullahakon/Youtube-AI-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/mdamanullahakon/Youtube-AI-Platform/actions/workflows/ci.yml)
+[![Codecov](https://codecov.io/gh/mdamanullahakon/Youtube-AI-Platform/graph/badge.svg)](https://codecov.io/gh/mdamanullahakon/Youtube-AI-Platform)
+[![Test Status](https://img.shields.io/badge/tests-passing-brightgreen?style=flat-square)](https://github.com/mdamanullahakon/Youtube-AI-Platform/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
+> **Coverage badge** — The badge above is served by Codecov and updates automatically with every CI run.
+
 **Autonomous AI-Powered YouTube Content Operating System**
 
 A full production-grade platform that researches, generates, renders, optimizes, publishes, and improves YouTube content automatically using AI agents.
+
+> **Coverage report** is automatically uploaded to [Codecov](https://codecov.io/gh/mdamanullahakon/Youtube-AI-Platform) on every CI run, with PR comments when coverage changes. Coverage artifacts are also available from the [CI workflow run](https://github.com/mdamanullahakon/Youtube-AI-Platform/actions/workflows/ci.yml).
+
+### Codecov Integration
+
+This project uses [Codecov](https://about.codecov.io/) for automated coverage tracking, trend visualization, and PR commenting.
+
+Merged coverage from all workspaces (API + Dashboard) is uploaded via the CI pipeline.
+
+#### One-time Setup
+
+1. **Enable the repo** at [app.codecov.io](https://app.codecov.io) (sign in with GitHub)
+2. Codecov will automatically add `CODECOV_TOKEN` to your repo secrets, or you can add it manually:
+   - Go to **Settings → Secrets and variables → Actions**
+   - Add `CODECOV_TOKEN` with the token from your Codecov repo settings page
+3. PR comments and status checks will appear automatically on the next CI run
+
+#### Coverage Configuration
+
+Coverage behavior is configured in [`codecov.yml`](./codecov.yml):
+- **Components**: Tracks coverage separately for `api/src/` and `apps/dashboard/`
+- **Project threshold**: Coverage can drop up to 2% before failing the check
+- **Patch threshold**: New/changed code must maintain at least 10% of the base coverage
+- **PR comments**: Shows a summary diff with component breakdown
 
 ## Features
 

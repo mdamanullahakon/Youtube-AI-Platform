@@ -56,6 +56,7 @@ model VideoProject {
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   channelId      String?
   topic          String
+  niche          String          @default("generic") // added niche for per‑project niche consistency
   title          String?
   description    String?
   status         String          @default("draft")
@@ -236,6 +237,7 @@ model YouTubeAccount {
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   activeUsers       User[]      @relation("ActiveChannel")
+  niche             String      @default("generic") // added niche field, enforce one niche per channel
 
   @@unique([userId, channelId])
   @@index([userId])
@@ -495,6 +497,43 @@ model UploadSchedule {
   @@index([userId])
   @@index([status])
   @@index([nextScheduledAt])
+}
+
+model UploadSlot {
+  id            String   @id @default(cuid())
+  projectId     String   @unique
+  scheduledAt   DateTime?
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model EpisodeProgress {
+  id               String   @id @default(cuid())
+  projectId        String   @unique
+  episodeNumber    Int      @default(1)
+  views            Int      @default(0)
+  watchTime        Float    @default(0)
+  retention        Float    @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+model WeeklyPerformance {
+  id                String   @id @default(cuid())
+  channelId         String
+  weekStart         DateTime @default(now())
+  avgCTR            Float    @default(0)
+  avgRetention      Float    @default(0)
+  avgWatchTime      Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([channelId, weekStart])
 }
 
 model ChannelMetrics {

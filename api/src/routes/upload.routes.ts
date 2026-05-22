@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   uploadToYouTubeHandler,
+  getUploadJobStatus,
   getUploadHistory,
   getFallbackStatusHandler,
   listFallbackQueueHandler,
@@ -16,6 +17,7 @@ import { projectIdParams } from '../validators';
 const router = Router();
 
 router.post('/youtube/:projectId', authenticate, validateParams(projectIdParams), uploadToYouTubeHandler);
+router.get('/status/:jobId', authenticate, getUploadJobStatus);
 router.get('/history', authenticate, getUploadHistory);
 router.get('/fallback/status', authenticate, getFallbackStatusHandler);
 router.get('/fallback/queue', authenticate, listFallbackQueueHandler);

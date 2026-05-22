@@ -31,14 +31,23 @@ User → Dashboard → API → Agents → Queue System → Workers → YouTube
 6. **SEO Agent** → Optimizes titles, descriptions, tags
 7. **Analytics Agent** → Learns from performance data
 
+## Production Pipeline (canonical)
+
+All production APIs use **one** path:
+
+`POST /api/videos/generate/new` → `video-generation` queue → `video.worker` → **sync `PipelineOrchestrator`**
+
+Steps (blocking order): Idea/Trend → Script → **Voice** → Thumbnail → Video → Upload → Analytics
+
+- Voice must finish before render; pipeline fails if `audioUrl` is missing (no silent videos).
+- BullMQ FlowProducer (`createFullPipelineFlow`) is **disabled** unless `ENABLE_LEGACY_QUEUE_PIPELINE=true`.
+- Income v2 workers are **disabled** unless `ENABLE_INCOME_SYSTEM_V2=true`.
+
 ## Queue System
 
-- `trend-analysis` - Trend research jobs
-- `script-generation` - Script writing jobs
-- `video-generation` - Full pipeline jobs
-- `video-render` - FFmpeg rendering jobs
-- `youtube-upload` - YouTube API upload jobs
-- `analytics-collection` - Analytics gathering jobs
+- `video-generation` - **Canonical** full pipeline (sync orchestrator inside worker)
+- `youtube-upload` - Manual upload API only
+- Legacy (optional): `trend-analysis`, `script-generation`, `video-render`, `analytics-collection`
 
 ## API Endpoints
 

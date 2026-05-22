@@ -10,6 +10,7 @@ const navItems = [
   { href: '/dashboard/projects', label: 'Projects', icon: '🎬' },
   { href: '/dashboard/viral-opportunities', label: 'Viral Intel', icon: '🔥' },
   { href: '/dashboard/analytics', label: 'Growth Analytics', icon: '📈' },
+  { href: '/dashboard/audit', label: 'Channel Audit', icon: '🔍' },
   { href: '/dashboard/agents', label: 'AI Agents', icon: '🤖' },
   { href: '/dashboard/upload-history', label: 'Upload History', icon: '📤' },
   { href: '/dashboard/deploy', label: 'Deploy', icon: '🚀' },

@@ -12,6 +12,16 @@
       "persistent": true,
       "inputs": ["$TURBO_DEFAULT$", ".env*"]
     },
+    "test": {
+      "cache": false
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:coverage": {
+      "cache": false
+    },
     "lint": {},
     "start": {
       "dependsOn": ["build"],

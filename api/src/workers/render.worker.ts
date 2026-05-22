@@ -45,6 +45,13 @@ const worker = new Worker(
     });
 
     if (!project?.script) throw new Error('No script found');
+
+    if (!project.voiceover?.audioUrl) {
+      throw new Error(
+        'Voiceover is required before render. Use the canonical pipeline (POST /api/videos/generate/new) so voice completes before render.',
+      );
+    }
+
     await job.updateProgress(10);
 
     const scenes = parseScriptScenes(project.script.content);
@@ -59,16 +66,12 @@ const worker = new Worker(
 
     await job.updateProgress(20);
 
-    let voiceoverPath: string | undefined;
-    if (project.voiceover?.audioUrl) {
-      const rawPath = join(process.cwd(), project.voiceover.audioUrl.replace(/^\//, ''));
-      if (existsSync(rawPath) && (await stat(rawPath)).size >= 100) {
-        voiceoverPath = rawPath;
-        logger.info(`[RENDER_TRACE] Voiceover file validated: ${rawPath}`);
-      } else {
-        logger.warn('[RENDER_TRACE] Voiceover file missing or too small - proceeding without');
-      }
+    const rawPath = join(process.cwd(), project.voiceover.audioUrl.replace(/^\//, ''));
+    if (!existsSync(rawPath) || (await stat(rawPath)).size < 100) {
+      throw new Error(`Voiceover file missing or invalid: ${rawPath}. Pipeline cannot render without audio.`);
     }
+    const voiceoverPath = rawPath;
+    logger.info(`[RENDER_TRACE] Voiceover file validated: ${rawPath}`);
 
     // ─── RENDER WITH SCENE RETRY BUILT-IN ─────────────────────────────────
     const encoder = await getEncoder();

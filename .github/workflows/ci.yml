@@ -1,0 +1,274 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: TypeScript Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: api
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+        working-directory: api
+
+  test:
+    name: Tests (Unit + Integration + E2E)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: api
+
+      - name: Run all tests with coverage & JUnit report
+        run: npm run test:ci
+        working-directory: api
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: api/coverage/
+          retention-days: 14
+
+      - name: Upload test results (JUnit)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-test-results
+          path: api/junit.xml
+          retention-days: 14
+
+  test-all:
+    name: All Workspace Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: api
+
+      - name: Run all workspace tests via turbo
+        run: npm run test
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: api
+
+      - name: Run coverage across all workspaces
+        run: npm run test:coverage
+
+      - name: Upload API coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report-api
+          path: api/coverage/
+          retention-days: 14
+
+      - name: Upload dashboard coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report-dashboard
+          path: apps/dashboard/coverage/
+          retention-days: 14
+
+      - name: Merge coverage reports
+        run: |
+          mkdir -p coverage/merged
+          cp api/coverage/lcov.info coverage/merged/api.lcov.info
+          cp apps/dashboard/coverage/lcov.info coverage/merged/dashboard.lcov.info
+          cat coverage/merged/*.lcov.info > coverage/merged/combined.lcov.info
+          TOTAL_LINES=$(wc -l < coverage/merged/combined.lcov.info)
+          echo "Merged LCOV report: $TOTAL_LINES lines combined"
+          # Compute combined coverage summary from lcov data
+          COVERED=$(grep -o '^LH:[0-9]*' coverage/merged/combined.lcov.info | awk -F: '{s+=$2} END {print s}')
+          FOUND=$(grep -o '^LF:[0-9]*' coverage/merged/combined.lcov.info | awk -F: '{s+=$2} END {print s}')
+          if [ -n "$FOUND" ] && [ "$FOUND" -gt 0 ]; then
+            PCT=$(echo "scale=1; $COVERED * 100 / $FOUND" | bc)
+            echo "Combined coverage: $PCT% ($COVERED / $FOUND)"
+          else
+            echo "No coverage data to aggregate"
+          fi
+
+      - name: Upload merged coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report-merged
+          path: coverage/merged/
+          retention-days: 14
+
+      - name: Upload API coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./api/coverage/lcov.info
+          flags: api
+          name: api-coverage
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload dashboard coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./apps/dashboard/coverage/lcov.info
+          flags: dashboard
+          name: dashboard-coverage
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Generate coverage badge
+        run: node scripts/update-coverage-badge.js
+        env:
+          # GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          # GIST_ID: ${{ secrets.GIST_ID }}
+
+      - name: Upload coverage badge artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-badge
+          path: coverage/badge.json
+          retention-days: 14
+
+  test-dashboard:
+    name: Dashboard Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run dashboard unit tests
+        run: npm run test
+        working-directory: apps/dashboard
+
+  build-dashboard:
+    name: Dashboard Build
+    needs: [test-dashboard]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dashboard
+        run: npm run build
+        working-directory: apps/dashboard
+
+  build-website:
+    name: Website Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build website
+        run: npm run build
+        working-directory: apps/website
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: api
+
+      - name: Run ESLint (Dashboard)
+        run: npx eslint .
+        working-directory: apps/dashboard

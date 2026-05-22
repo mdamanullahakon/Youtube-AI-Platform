@@ -61,6 +61,41 @@ export async function uploadToYouTubeHandler(req: Request, res: Response) {
   }
 }
 
+export async function getUploadJobStatus(req: Request, res: Response) {
+  try {
+    const jobId = req.params.jobId as string;
+    const job = await uploadQueue.getJob(jobId);
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        jobId,
+        status: 'failed',
+        message: 'Upload job not found',
+      });
+    }
+
+    const state = await job.getState();
+    const status =
+      state === 'active' ? 'processing'
+        : state === 'completed' ? 'completed'
+          : state === 'failed' ? 'failed'
+            : 'waiting';
+
+    res.json({
+      success: true,
+      jobId,
+      status,
+      progress: job.progress,
+      failedReason: status === 'failed' ? job.failedReason : undefined,
+      result: status === 'completed' ? job.returnvalue : undefined,
+    });
+  } catch (error: any) {
+    logger.error('Get upload job status failed', { error: error.message, jobId: req.params.jobId });
+    res.status(500).json({ success: false, message: 'Failed to get upload job status' });
+  }
+}
+
 export async function getUploadHistory(req: Request, res: Response) {
   try {
     const userId = (req as any).userId;

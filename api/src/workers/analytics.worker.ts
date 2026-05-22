@@ -24,14 +24,21 @@ const worker = new Worker(
       include: { uploadHistory: true },
     });
 
-    if (!project?.uploadHistory?.videoId) {
-      logger.warn(`No video ID for project ${projectId}`);
+    const videoId = project?.uploadHistory?.videoId;
+    if (!videoId || videoId.startsWith('fallback_')) {
+      logger.warn(`[Analytics] Skipping project ${projectId}: no valid YouTube videoId (upload may not have completed)`);
       await job.updateProgress(100);
-      return { warning: 'No video ID found' };
+      return { skipped: true, reason: 'no_video_id', projectId };
+    }
+
+    if (project.uploadHistory?.status !== 'uploaded' && project.uploadHistory?.status !== 'published') {
+      logger.warn(`[Analytics] Skipping project ${projectId}: upload status is ${project.uploadHistory?.status}`);
+      await job.updateProgress(100);
+      return { skipped: true, reason: 'upload_not_complete', projectId };
     }
 
     await job.updateProgress(20);
-    const stats = await getVideoAnalytics(project.uploadHistory.videoId);
+    const stats = await getVideoAnalytics(videoId);
 
     await job.updateProgress(40);
 

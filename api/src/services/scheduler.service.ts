@@ -1,4 +1,6 @@
 import cron from 'node-cron';
+import { SmartSchedulerService } from './smart-scheduler.service';
+import { SeriesIntelligenceService } from './series-intelligence.service';
 import { logger } from '../utils/logger';
 import { StorageManager } from './storage.service';
 import { UploadSchedulerService } from './upload-scheduler.service';
@@ -10,7 +12,7 @@ import { MultiChannelOrchestrator } from './multi-channel-orchestrator.service';
 import { NotificationService } from './notification.service';
 import { incomeCycleQueue } from './income-system-v2/income.queue';
 import { syncAllUsersChannelStats } from './youtube-oauth.service';
-import { AutoPipelineOrchestrator } from './auto-pipeline-orchestrator.service';
+import { enqueueCanonicalPipeline } from '../pipeline/canonical-pipeline.service';
 
 const uploadScheduler = new UploadSchedulerService();
 
@@ -33,6 +35,23 @@ export function initializeSchedulers() {
     }
   });
   logger.info('Disk health checker initialized (15-min interval)');
+
+    if (process.env.ENABLE_SERIES_INTELLIGENCE === 'true') {
+      const seriesService = new SeriesIntelligenceService();
+      cron.schedule('*/15 * * * *', async () => {
+        try {
+          // TODO: replace placeholders with actual series, channel, and project IDs
+          const seriesId = 'placeholder-series-id';
+          const channelId = 'placeholder-channel-id';
+          const projectId = 'placeholder-project-id';
+          await seriesService.scheduleSeriesUpload(seriesId, channelId, projectId);
+          logger.info('SeriesIntelligence evaluated and scheduled');
+        } catch (err: any) {
+          logger.error('SeriesIntelligence cron failed', { error: err.message });
+        }
+      });
+      logger.info('SeriesIntelligence scheduler initialized (15‑min interval)');
+    }
 
   cron.schedule('* * * * *', async () => {
     try {
@@ -150,24 +169,34 @@ export function initializeSchedulers() {
 
   const autoPipelineSchedule = process.env.AUTO_PIPELINE_CRON || '0 4 * * *';
   cron.schedule(autoPipelineSchedule, async () => {
-    logger.info('[AutoPipelineCron] Starting daily auto pipeline');
+    logger.info('[AutoPipelineCron] Starting daily canonical pipeline enqueue');
     try {
       const users = await prisma.user.findMany({
         where: { youTubeAccounts: { some: { isConnected: true } } },
         select: { id: true },
       });
       for (const user of users) {
-        const orchestrator = new AutoPipelineOrchestrator();
-        const result = await orchestrator.runDaily(user.id);
-        if (result.success) {
-          logger.info(`[AutoPipelineCron] Video uploaded for user ${user.id}: ${result.videoId}`);
-        } else {
-          logger.warn(`[AutoPipelineCron] Pipeline skipped for user ${user.id}: ${result.error}`);
-        }
+        const account = await prisma.youTubeAccount.findFirst({
+          where: { userId: user.id, isConnected: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        const project = await prisma.videoProject.create({
+          data: {
+            userId: user.id,
+            channelId: account?.channelId,
+            topic: 'Scheduled automated content',
+            status: 'draft',
+          },
+        });
+        const jobId = await enqueueCanonicalPipeline(project.id, project.topic, {
+          userId: user.id,
+          channelId: account?.channelId,
+        });
+        logger.info(`[AutoPipelineCron] Canonical pipeline job ${jobId} for user ${user.id}, project ${project.id}`);
       }
     } catch (err: any) {
       logger.error(`[AutoPipelineCron] Failed: ${err.message}`);
     }
   });
-  logger.info(`Auto pipeline scheduler initialized (${autoPipelineSchedule})`);
+  logger.info(`Canonical auto pipeline scheduler initialized (${autoPipelineSchedule})`);
 }

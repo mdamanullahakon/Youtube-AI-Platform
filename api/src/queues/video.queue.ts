@@ -94,8 +94,8 @@ export const STANDARD_JOB_OPTS = {
 };
 
 export const RENDER_JOB_OPTS = {
-  attempts: 4,
-  backoff: { type: 'exponential', delay: 10000 } as const,
+  attempts: 5,
+  backoff: { type: 'exponential', delay: 5000 } as const,
   timeout: 600_000,
   removeOnComplete: { age: 86400, count: 100 },
   removeOnFail: { age: 86400 * 7, count: 50 },
@@ -105,8 +105,8 @@ export const UPLOAD_JOB_OPTS = {
   attempts: 5,
   backoff: { type: 'exponential', delay: 10000 } as const,
   timeout: 300_000,
-  removeOnComplete: { age: 86400 * 7, count: 100 },
-  removeOnFail: { age: 86400 * 30, count: 50 },
+  removeOnComplete: { age: 86400 * 3, count: 100 },
+  removeOnFail: { age: 86400 * 7, count: 100 },
 };
 
 export const CLEANUP_JOB_OPTS = {
@@ -231,5 +231,4 @@ export const ALL_QUEUES = [
   { name: 'youtube-upload', queue: uploadQueue, events: queueEvents.upload, dlq: deadLetterQueues.upload },
   { name: 'analytics-collection', queue: analyticsQueue, events: queueEvents.analytics, dlq: deadLetterQueues.analytics },
   { name: 'transcript-analysis', queue: transcriptQueue, events: queueEvents.transcript, dlq: deadLetterQueues.transcript },
-  { name: 'cleanup', queue: cleanupQueue, events: queueEvents.cleanup, dlq: deadLetterQueues.cleanup },
 ] as const;

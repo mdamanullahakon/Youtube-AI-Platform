@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
+    "test": "turbo run test",
+    "test:watch": "turbo run test:watch",
+    "test:coverage": "turbo run test:coverage",
     "lint": "turbo lint",
     "setup": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
     "start:dev": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",

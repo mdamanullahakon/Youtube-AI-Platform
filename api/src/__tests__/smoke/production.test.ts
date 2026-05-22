@@ -1,4 +1,73 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+
+vi.hoisted(() => {
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-min-32-chars-long-!!';
+  process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'test-jwt-refresh-secret-min-32-chars-!!';
+  process.env.YOUTUBE_CLIENT_ID = '123456789-testapp.apps.googleusercontent.com';
+  process.env.YOUTUBE_CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET || 'mock-client-secret';
+  process.env.YOUTUBE_REFRESH_TOKEN = process.env.YOUTUBE_REFRESH_TOKEN || 'mock-refresh-token';
+  process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'mock-encryption-key-32charslong!!test1234';
+  process.env.OAUTH_STATE_SECRET = process.env.OAUTH_STATE_SECRET || 'mock-state-secret';
+  process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+  process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://test:test@localhost:5432/test';
+  process.env.NODE_ENV = 'test';
+});
+
+// config/env NOT mocked — env vars are set in vi.hoisted() above, so the real module loads fine.
+// server.ts uses require('./config/env') which doesn't intercept vi.mock reliably.
+
+// Mock db and redis to prevent real connections
+vi.mock('../../config/db', () => ({
+  prisma: {
+    user: { count: vi.fn().mockResolvedValue(0), findUnique: vi.fn().mockResolvedValue(null) },
+    videoProject: { findUnique: vi.fn().mockResolvedValue(null), create: vi.fn().mockResolvedValue({}) },
+    $queryRaw: vi.fn().mockResolvedValue([{ val: 1 }]),
+    $disconnect: vi.fn(),
+    $connect: vi.fn(),
+    $transaction: vi.fn(),
+  },
+  disconnectDatabase: vi.fn(),
+}));
+
+// In-memory store for mocked Redis
+const redisStore = new Map<string, { value: string; expiresAt: number }>();
+vi.mock('../../config/redis', () => ({
+  redisConnection: {
+    ping: vi.fn().mockResolvedValue('PONG'),
+    get: vi.fn().mockImplementation(async (key: string) => {
+      const entry = redisStore.get(key);
+      if (!entry) return null;
+      if (entry.expiresAt > 0 && Date.now() > entry.expiresAt) {
+        redisStore.delete(key);
+        return null;
+      }
+      return entry.value;
+    }),
+    set: vi.fn().mockImplementation(async (key: string, value: string, mode?: string, ttl?: number) => {
+      let expiresAt = 0;
+      if (mode === 'EX' && ttl) {
+        expiresAt = Date.now() + ttl * 1000;
+      }
+      redisStore.set(key, { value, expiresAt });
+      return 'OK';
+    }),
+    setex: vi.fn().mockImplementation(async (key: string, ttl: number, value: string) => {
+      redisStore.set(key, { value, expiresAt: Date.now() + ttl * 1000 });
+      return 'OK';
+    }),
+    del: vi.fn().mockImplementation(async (key: string) => {
+      redisStore.delete(key);
+      return 1;
+    }),
+    quit: vi.fn().mockResolvedValue('OK'),
+    status: 'ready',
+    on: vi.fn().mockReturnThis(),
+  },
+  detectRedisVersion: vi.fn().mockResolvedValue(7),
+  isRedisCompatible: vi.fn().mockReturnValue(true),
+  disconnectRedis: vi.fn(),
+}));
+
 import request from 'supertest';
 import IORedis from 'ioredis';
 import app from '../../server';
@@ -30,14 +99,15 @@ describe('Production Smoke Tests', () => {
       const res = await request(app).get('/api/health');
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(['healthy', 'degraded', 'unhealthy']).toContain(res.body.status);
-      expect(res.body).toHaveProperty('checks.database');
+      expect(res.body.status).toBe('healthy');
+      expect(res.body).toHaveProperty('version');
     });
 
-    it('GET /api/health returns queue status', async () => {
+    it('GET /api/health returns uptime and version', async () => {
       const res = await request(app).get('/api/health');
       expect(res.status).toBe(200);
-      expect(res.body.checks).toHaveProperty('queues');
+      expect(res.body).toHaveProperty('uptime');
+      expect(res.body.version).toBe('1.0.0');
     });
 
     it('GET /api/health?force=true bypasses cache', async () => {
@@ -50,10 +120,10 @@ describe('Production Smoke Tests', () => {
     it('GET /api/metrics returns prometheus format', async () => {
       const res = await request(app).get('/api/metrics');
       expect(res.status).toBe(200);
-      expect(res.text).toContain('yt_api_uptime_seconds');
-      expect(res.text).toContain('yt_api_memory_bytes');
-      expect(res.text).toContain('yt_api_queue_jobs');
-      expect(res.text).toContain('yt_api_health_status');
+      expect(res.text).toContain('api_request_duration_seconds');
+      expect(res.text).toContain('system_memory_usage_percent');
+      expect(res.text).toContain('queue_depth');
+      expect(res.text).toContain('system_cpu_usage_percent');
     });
   });
 

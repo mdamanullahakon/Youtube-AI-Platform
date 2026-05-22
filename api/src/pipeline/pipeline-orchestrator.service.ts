@@ -10,6 +10,7 @@ import { VideoEngineStep } from './steps/video-engine.step';
 import { ThumbnailEngineStep } from './steps/thumbnail-engine.step';
 import { UploadEngineStep } from './steps/upload-engine.step';
 import { AnalyticsEngineStep } from './steps/analytics-engine.step';
+import { VideoValidationStep } from './steps/video-validation.step';
 import {
   PipelineContext,
   PipelineStatus,
@@ -23,6 +24,8 @@ import {
   VoiceEngineOutput,
   VideoEngineInput,
   VideoEngineOutput,
+  VideoValidationInput,
+  VideoValidationOutput,
   ThumbnailEngineInput,
   ThumbnailEngineOutput,
   UploadEngineInput,
@@ -32,6 +35,16 @@ import {
 } from './pipeline.types';
 import { PipelineStateMachine, PipelineState } from './state-machine';
 import { acquireJobLock, releaseJobLock, verifyNoDuplicateOutputs } from './idempotency';
+
+/** Steps that must never use fallback output — pipeline fails instead. */
+const CRITICAL_STEPS = new Set([
+  'VoiceEngine',
+  'VideoEngine',
+  'VideoValidation',
+  'ThumbnailEngine',
+  'UploadEngine',
+  'AnalyticsEngine',
+]);
 
 export class PipelineOrchestrator {
   private context: PipelineContext;
@@ -44,6 +57,7 @@ export class PipelineOrchestrator {
   private voiceEngine: VoiceEngineStep;
   private videoEngine: VideoEngineStep;
   private thumbnailEngine: ThumbnailEngineStep;
+  private videoValidation: VideoValidationStep;
   private uploadEngine: UploadEngineStep;
   private analyticsEngine: AnalyticsEngineStep;
 
@@ -66,6 +80,7 @@ export class PipelineOrchestrator {
     this.voiceEngine = new VoiceEngineStep();
     this.videoEngine = new VideoEngineStep();
     this.thumbnailEngine = new ThumbnailEngineStep();
+    this.videoValidation = new VideoValidationStep();
     this.uploadEngine = new UploadEngineStep();
     this.analyticsEngine = new AnalyticsEngineStep();
   }
@@ -147,27 +162,49 @@ export class PipelineOrchestrator {
     );
     if (scriptOutput === null) return false;
 
-    const [voiceOutput, thumbnailOutput] = await Promise.all([
-      this.runStep<VoiceEngineInput, VoiceEngineOutput>(
-        'VoiceEngine', this.voiceEngine,
-        { projectId: this.context.projectId, topic: topicOutput.topic, channelId: this.context.channelId, userId: this.context.userId, script: scriptOutput },
-      ),
-      this.runStep<ThumbnailEngineInput, ThumbnailEngineOutput>(
-        'ThumbnailEngine', this.thumbnailEngine,
-        { projectId: this.context.projectId, topic: topicOutput.topic, channelId: this.context.channelId, userId: this.context.userId, script: scriptOutput },
-      ),
-    ]);
+    // Voice MUST complete before render (blocking step)
+    const voiceOutput = await this.runStep<VoiceEngineInput, VoiceEngineOutput>(
+      'VoiceEngine', this.voiceEngine,
+      { projectId: this.context.projectId, topic: topicOutput.topic, channelId: this.context.channelId, userId: this.context.userId, script: scriptOutput },
+    );
+    if (voiceOutput === null || !voiceOutput.audioUrl) {
+      pipelineLogger.error(`VoiceEngine failed for project ${this.context.projectId} — aborting pipeline (no silent video)`);
+      return false;
+    }
 
     const videoInput: VideoEngineInput = {
       projectId: this.context.projectId, topic: topicOutput.topic,
       channelId: this.context.channelId, userId: this.context.userId,
       script: scriptOutput,
-      voiceover: voiceOutput || { audioUrl: null, duration: 0, voiceoverId: null },
+      voiceover: voiceOutput,
     };
     const videoOutput = await this.runStep<VideoEngineInput, VideoEngineOutput>(
       'VideoEngine', this.videoEngine, videoInput,
     );
     if (videoOutput === null) return false;
+
+    const validationOutput = await this.runStep<VideoValidationInput, VideoValidationOutput>(
+      'VideoValidation', this.videoValidation,
+      {
+        projectId: this.context.projectId,
+        topic: topicOutput.topic,
+        channelId: this.context.channelId,
+        userId: this.context.userId,
+        script: scriptOutput,
+        voiceover: voiceOutput,
+        video: videoOutput,
+      },
+    );
+    if (validationOutput === null) return false;
+
+    const thumbnailOutput = await this.runStep<ThumbnailEngineInput, ThumbnailEngineOutput>(
+      'ThumbnailEngine', this.thumbnailEngine,
+      { projectId: this.context.projectId, topic: topicOutput.topic, channelId: this.context.channelId, userId: this.context.userId, script: scriptOutput },
+    );
+    if (thumbnailOutput === null || !thumbnailOutput.imageUrl) {
+      pipelineLogger.error(`ThumbnailEngine failed for project ${this.context.projectId} — upload blocked`);
+      return false;
+    }
 
     await this.stateMachine.transitionTo(PipelineState.READY_FOR_UPLOAD);
 
@@ -175,22 +212,28 @@ export class PipelineOrchestrator {
       projectId: this.context.projectId, topic: topicOutput.topic,
       channelId: this.context.channelId, userId: this.context.userId,
       video: videoOutput,
-      thumbnail: thumbnailOutput || { thumbnailId: '', imageUrl: null, style: 'default', predictedCtr: 0 },
+      thumbnail: thumbnailOutput,
       script: scriptOutput,
     };
     const uploadOutput = await this.runStep<UploadEngineInput, UploadEngineOutput>(
       'UploadEngine', this.uploadEngine, uploadInput,
     );
-    if (uploadOutput === null) return false;
+    if (uploadOutput === null || !uploadOutput.videoId || uploadOutput.videoId.startsWith('fallback_')) {
+      pipelineLogger.error(`UploadEngine did not produce a valid YouTube videoId for project ${this.context.projectId}`);
+      return false;
+    }
 
     const analyticsInput: AnalyticsEngineInput = {
       projectId: this.context.projectId, topic: topicOutput.topic,
       channelId: this.context.channelId, userId: this.context.userId,
       upload: uploadOutput,
     };
-    await this.runStep<AnalyticsEngineInput, AnalyticsEngineOutput>(
+    const analyticsResult = await this.runStep<AnalyticsEngineInput, AnalyticsEngineOutput>(
       'AnalyticsEngine', this.analyticsEngine, analyticsInput,
     );
+    if (analyticsResult === null) {
+      pipelineLogger.warn(`AnalyticsEngine skipped or failed for project ${this.context.projectId} after successful upload`);
+    }
 
     return true;
   }
@@ -215,6 +258,10 @@ export class PipelineOrchestrator {
 
     if (result.status === StepStatus.FALLBACK) {
       pipelineLogger.warn(`${stepName} used fallback: ${result.error}`);
+      if (CRITICAL_STEPS.has(stepName)) {
+        pipelineLogger.error(`${stepName} fallback rejected for project ${this.context.projectId}`);
+        return null;
+      }
     }
 
     return result.output;
@@ -223,7 +270,7 @@ export class PipelineOrchestrator {
   getProgress(): number {
     const stepWeights: Record<string, number> = {
       RevenueGate: 0, ViralIntelligenceGate: 1, UsaMarketGate: 2, TopicEngine: 10, ScriptEngine: 25, VoiceEngine: 35,
-      ThumbnailEngine: 40, VideoEngine: 65, UploadEngine: 85, AnalyticsEngine: 100,
+      VideoEngine: 55, VideoValidation: 62, ThumbnailEngine: 72, UploadEngine: 88, AnalyticsEngine: 100,
     };
     let maxWeight = 0;
     for (const [stepName, weight] of Object.entries(stepWeights)) {

@@ -13,21 +13,57 @@ interface SubtitleEntry {
 // ASS style override for subtitles filter
 // Alignment=10 means center vertically + horizontally
 // BorderStyle=1 means outline + shadow
-export function getSubtitleStyle(): string {
+// Expanded set of power words including horror-specific emotional triggers
+const POWER_WORDS = new Set([
+  'secret', 'hidden', 'shocking', 'never', 'always', 'truth', 'danger', 'deadly',
+  'insane', 'crazy', 'million', 'billion', 'free', 'urgent', 'warning', 'revealed',
+  // Horror‑specific emotional words
+  'blood', 'shadow', 'terror', 'silence', 'scream', 'haunted', 'creepy', 'nightmare',
+]);
+
+/** Wrap power words for ASS highlight (yellow bold) */
+export function highlightSubtitleText(text: string): string {
+  return text.split(/(\s+)/).map(part => {
+    const clean = part.replace(/[^a-zA-Z]/g, '').toLowerCase();
+    if (clean.length > 3 && POWER_WORDS.has(clean)) {
+      return `{\\b1\\c&H0000FFFF&}${part}{\\r}`;
+    }
+    return part;
+  }).join('');
+}
+
+export function getSubtitleStyle(mood: string = 'story'): string {
+  const isDark = mood === 'dark' || mood === 'suspense';
   return [
-    'Alignment=10',
+    'Alignment=2',
     'FontName=Arial',
-    'FontSize=22',
-    'PrimaryColour=&H00FFFFFF',
-    'SecondaryColour=&H00FFFFFF',
+    'FontSize=26',
+    isDark ? 'PrimaryColour=&H00E0E0FF' : 'PrimaryColour=&H00FFFFFF',
     'OutlineColour=&H80000000',
-    'BackColour=&H80000000',
+    'BackColour=&H64000000',
     'BorderStyle=1',
-    'Outline=1',
-    'Shadow=1',
-    'MarginV=40',
+    'Outline=2',
+    'Shadow=2',
+    'MarginV=55',
+    'Bold=1',
     'WrapStyle=2',
   ].join(',');
+}
+
+function splitSubtitleText(text: string, maxCharsPerChunk: number): string[] {
+  const words = text.split(' ');
+  const chunks: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if ((current + ' ' + word).trim().length <= maxCharsPerChunk) {
+      current += (current ? ' ' : '') + word;
+    } else {
+      if (current) chunks.push(current.trim());
+      current = word;
+    }
+  }
+  if (current) chunks.push(current.trim());
+  return chunks.length ? chunks : [text];
 }
 
 function formatSrtTime(ms: number): string {
@@ -39,40 +75,7 @@ function formatSrtTime(ms: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(millis).padStart(3, '0')}`;
 }
 
-function splitSubtitleText(text: string, maxChars: number): string[] {
-  if (text.length <= maxChars) return [text];
 
-  const chunks: string[] = [];
-  const sentences = text.split(/(?<=[.!?])\s+/);
-
-  let current = '';
-  for (const sentence of sentences) {
-    if ((current + sentence).length <= maxChars) {
-      current += (current ? ' ' : '') + sentence;
-    } else {
-      if (current) chunks.push(current.trim());
-      if (sentence.length > maxChars) {
-        const words = sentence.split(/\s+/);
-        let wordChunk = '';
-        for (const word of words) {
-          if ((wordChunk + word).length > maxChars) {
-            chunks.push(wordChunk.trim());
-            wordChunk = word;
-          } else {
-            wordChunk += (wordChunk ? ' ' : '') + word;
-          }
-        }
-        if (wordChunk) current = wordChunk;
-        else current = '';
-      } else {
-        current = sentence;
-      }
-    }
-  }
-  if (current) chunks.push(current.trim());
-
-  return chunks.length ? chunks : [text.substring(0, maxChars)];
-}
 
 export function generateSubtitles(scenes: ScenePlan[], transitionDurationMs: number = 0): {
   entries: SubtitleEntry[];
@@ -98,7 +101,7 @@ export function generateSubtitles(scenes: ScenePlan[], transitionDurationMs: num
         index: entries.length + 1,
         startMs: correctedStart + i * chunkDuration,
         endMs: Math.min(correctedStart + (i + 1) * chunkDuration, correctedStart + actualDuration),
-        text: chunks[i],
+        text: highlightSubtitleText(chunks[i]),
       });
     }
 

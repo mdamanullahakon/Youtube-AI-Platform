@@ -3,9 +3,6 @@ import { redisConnection } from '../config/redis';
 import { queueLogger } from '../utils/logger';
 import { prisma } from '../config/db';
 import { generateScript } from '../agents/script.agent';
-import { agentQueue } from '../queues/video.queue';
-import { parseScriptScenes } from '../utils/helpers';
-import { checkStepIdempotency, markStepCompleted } from '../pipeline/idempotency';
 
 const worker = new Worker(
   'script-generation',
@@ -46,25 +43,10 @@ const worker = new Worker(
         data: { status: 'script_generated' },
       }).catch(err => queueLogger.error(`Failed to update project ${projectId} status to script_generated`, { error: (err as Error).message }));
 
-      // Idempotent agent dispatch — skip if already dispatched for this job
-      const agentDispatchKey = `agent-dispatch:${job.id}`;
-      const alreadyDispatched = await checkStepIdempotency(job.id || projectId, 'agent-dispatch');
-      if (!alreadyDispatched) {
-        const scenes = parseScriptScenes(script.content);
-        const scenesForPrompt = scenes.map(s => ({ text: s.text, visualPrompt: s.visualPrompt }));
-
-        await agentQueue.addBulk([
-          { name: 'prompt-generation', data: { scenes: scenesForPrompt, projectId }, opts: { deduplication: { id: `prompt:${projectId}`, ttl: 86400000 } } },
-          { name: 'voiceover-generation', data: { text: script.content, projectId }, opts: { deduplication: { id: `voiceover:${projectId}`, ttl: 86400000 } } },
-          { name: 'thumbnail-generation', data: { topic, hook: script.hook || '', projectId }, opts: { deduplication: { id: `thumbnail:${projectId}`, ttl: 86400000 } } },
-          { name: 'seo-optimization', data: { topic, hook: script.hook || '', projectId }, opts: { deduplication: { id: `seo:${projectId}`, ttl: 86400000 } } },
-        ]);
-
-        queueLogger.info(`Dispatched 4 agent tasks for project ${projectId}`);
-        await markStepCompleted(job.id || projectId, 'agent-dispatch');
-      } else {
-        queueLogger.info(`Agent tasks already dispatched for job ${job.id} — skipping`);
-      }
+      // Production uses sync PipelineOrchestrator — do not dispatch parallel agent jobs (voice/render race).
+      queueLogger.info(
+        `Script saved for project ${projectId}. Use canonical pipeline (video-generation/full-pipeline) for end-to-end processing.`,
+      );
     }
 
     await job.updateProgress(100);

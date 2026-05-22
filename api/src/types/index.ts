@@ -22,6 +22,9 @@ export interface Scene {
   text: string;
   duration: number;
   visualPrompt: string;
+  mood?: string;
+  pacing?: string;
+  retentionHook?: string;
 }
 
 export interface VisualPrompt {

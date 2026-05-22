@@ -59,6 +59,12 @@ vi.mock('../../../services/youtube-fallback.service', () => ({
   isFallbackActive: vi.fn().mockResolvedValue(false),
   deactivateFallback: vi.fn(),
 }));
+vi.mock('../../../services/pre-upload-validation.service', () => ({
+  PreUploadValidationGate: vi.fn().mockImplementation(function () {
+    return { validate: vi.fn().mockResolvedValue({ passed: true, blockers: [] }) };
+  }),
+}));
+
 vi.mock('../../../services/output-validation.service', () => ({
   OutputValidationGate: vi.fn().mockImplementation(function () {
     return {

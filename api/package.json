@@ -11,6 +11,7 @@
     "test:unit": "vitest run src/__tests__/unit",
     "test:integration": "vitest run src/__tests__/integration",
     "test:api": "vitest run src/__tests__/api",
+    "demo:audit": "vitest run src/__tests__/scripts/audit-pipeline-demo.test.ts --reporter=verbose",
     "dev": "node scripts/start-backend.js",
     "dev:nodemon": "nodemon -r dotenv/config src/server.ts",
     "dev:direct": "ts-node -r dotenv/config src/server.ts",

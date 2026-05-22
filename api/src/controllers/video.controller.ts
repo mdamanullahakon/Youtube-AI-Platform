@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/db';
-import { videoQueue, renderQueue } from '../queues/video.queue';
-import { createFullPipelineFlow, createScriptToRenderFlow } from '../queues/pipeline.queue';
+import { enqueueCanonicalPipeline } from '../pipeline/canonical-pipeline.service';
 import { logger } from '../utils/logger';
 
 export async function createVideoProject(req: Request, res: Response) {
@@ -15,19 +14,19 @@ export async function createVideoProject(req: Request, res: Response) {
 
     let jobId: string | undefined;
     try {
-      const job = await videoQueue.add('full-pipeline', { projectId: project.id, topic });
-      jobId = job.id;
-      logger.info(`Full pipeline job ${job.id} enqueued for project ${project.id}`);
+      jobId = await enqueueCanonicalPipeline(project.id, topic, { userId });
+      logger.info(`Canonical pipeline job ${jobId} enqueued for project ${project.id}`);
     } catch (queueError: any) {
       logger.warn(`Queue unavailable for project ${project.id}, created as draft: ${queueError.message}`);
     }
 
     res.status(202).json({
       success: true,
-      project: { id: project.id, topic: project.topic, status: project.status },
+      pipeline: 'canonical-sync',
+      project: { id: project.id, topic: project.topic, status: jobId ? 'running' : project.status },
       jobId,
       message: jobId
-        ? 'Pipeline job queued. Poll /api/videos/status/:projectId for updates.'
+        ? 'Canonical pipeline queued (sync PipelineOrchestrator). Poll /api/videos/status/:projectId for updates.'
         : 'Project created in draft mode (queue unavailable).',
     });
   } catch (error: any) {
@@ -39,27 +38,24 @@ export async function createVideoProject(req: Request, res: Response) {
 export async function generateVideoPipeline(req: Request, res: Response) {
   try {
     const projectId = req.params.projectId as string;
+    const userId = (req as any).userId;
     const project = await prisma.videoProject.findUnique({ where: { id: projectId } });
     if (!project) return res.status(404).json({ success: false, message: 'Project not found' });
 
-    const existingScript = await prisma.script.findFirst({ where: { projectId } });
-    if (!existingScript) return res.status(400).json({ success: false, message: 'No script found. Generate a script first.' });
-
-    await prisma.videoProject.update({
-      where: { id: projectId },
-      data: { status: 'processing' },
+    const jobId = await enqueueCanonicalPipeline(projectId, project.topic, {
+      userId: userId || project.userId,
+      channelId: project.channelId || undefined,
     });
 
-    const flow = await createScriptToRenderFlow(projectId);
-
-    logger.info(`Post-script pipeline flow created for project ${projectId}, root job: ${flow.pipelineJobId}`);
+    logger.info(`Canonical pipeline re-run for project ${projectId}, job: ${jobId}`);
 
     res.status(202).json({
       success: true,
+      pipeline: 'canonical-sync',
       projectId,
-      pipelineJobId: flow.pipelineJobId,
-      status: 'processing',
-      message: 'Pipeline flow created (render → upload → analytics). Agents dispatched after script generation.',
+      jobId,
+      status: 'running',
+      message: 'Canonical pipeline queued (Idea → Script → Voice → Video → Upload → Analytics).',
     });
   } catch (error: any) {
     logger.error('Video pipeline enqueue failed', { error: error.message });
@@ -68,32 +64,11 @@ export async function generateVideoPipeline(req: Request, res: Response) {
 }
 
 export async function renderVideoHandler(req: Request, res: Response) {
-  try {
-    const projectId = req.params.projectId as string;
-    const project = await prisma.videoProject.findUnique({ where: { id: projectId } });
-    if (!project) return res.status(404).json({ success: false, message: 'Project not found' });
-
-    await prisma.videoRender.upsert({
-      where: { projectId },
-      update: { status: 'pending', progress: 0 },
-      create: { projectId, status: 'pending', progress: 0 },
-    });
-
-    const job = await renderQueue.add('render-video', { projectId });
-
-    logger.info(`Render job ${job.id} enqueued for project ${projectId}`);
-
-    res.status(202).json({
-      success: true,
-      projectId,
-      jobId: job.id,
-      status: 'queued',
-      message: 'Render job queued. Poll /api/videos/status/:projectId for updates.',
-    });
-  } catch (error: any) {
-    logger.error('Render enqueue failed', { error: error.message });
-    res.status(500).json({ success: false, message: 'Render failed' });
-  }
+  return res.status(410).json({
+    success: false,
+    message: 'Standalone render is disabled. Use POST /api/videos/generate/new or POST /api/videos/generate/:projectId for the canonical pipeline.',
+    pipeline: 'canonical-sync',
+  });
 }
 
 export async function deleteProject(req: Request, res: Response) {

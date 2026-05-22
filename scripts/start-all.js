@@ -48,7 +48,7 @@ function checkNodeVersion() {
 // ─── STEP 1: Kill stale processes (NON-BLOCKING) ──────────────────────────
 async function killStaleProcesses() {
   log('Step 1: Killing stale processes...');
-  const MAX_KILL_WAIT_MS = 8000;
+  const MAX_KILL_WAIT_MS = 4000;
 
   const killPromises = [];
   const ports = [BACKEND_PORT, FRONTEND_PORT, 3000];
@@ -94,7 +94,7 @@ async function ensureRedis() {
   try {
     const { stdout } = await execAsync(
       'docker ps --filter "name=yt-redis" --format "{{.Status}}"',
-      { timeout: 5000, maxBuffer: 1024 },
+      { timeout: 2000, maxBuffer: 1024 },
     );
     if (stdout.trim().includes('Up') || stdout.trim().includes('healthy')) {
       log('Docker Redis is running');
@@ -102,17 +102,19 @@ async function ensureRedis() {
     }
   } catch {}
 
-  warn('Redis not running. Starting via Docker Compose...');
+  warn('Redis not running. Starting via Docker Compose in background...');
   try {
-    await execAsync(
-      'docker compose -f docker/docker-compose.local.yml up -d redis',
-      { cwd: ROOT, timeout: 30000, maxBuffer: 1024 },
-    );
-    log('Redis container started');
-    await sleep(3000);
+    const redisProcess = spawn('docker', ['compose', '-f', 'docker/docker-compose.local.yml', 'up', '-d', 'redis'], {
+      cwd: ROOT,
+      detached: true,
+      stdio: 'ignore',
+      shell: true,
+    });
+    redisProcess.unref();
+    log('Redis startup dispatched');
     return true;
   } catch (e) {
-    warn(`Could not start Redis: ${e.message}. Running without queue features.`);
+    warn(`Could not dispatch Redis startup: ${e.message}. Running without queue features until Redis is available.`);
     return false;
   }
 }
@@ -201,7 +203,7 @@ async function fireUploadJob() {
       signal: AbortSignal.timeout(10000),
     });
     const loginData = await loginRes.json();
-    const token = loginData?.token || loginData?.data?.token || null;
+    let token = loginData?.token || loginData?.data?.token || null;
 
     if (!token) {
       // Try registering
@@ -216,7 +218,7 @@ async function fireUploadJob() {
         signal: AbortSignal.timeout(10000),
       });
       const regData = await regRes.json();
-      const token = regData?.token || regData?.data?.token || null;
+      token = regData?.token || regData?.data?.token || null;
       if (!token) { log('Upload: No auth token (OAuth not configured?)'); return; }
     }
 
@@ -257,12 +259,12 @@ async function main() {
   await killStaleProcesses();
   await ensureRedis();
   startBackend();
-  await sleep(2000);
+  await sleep(1000);
   startFrontend();
 
   // Fire-and-forget health check + upload — never block the main flow
-  const healthPromise = checkHealthAsync();
-  const uploadPromise = fireUploadJob();
+  checkHealthAsync().catch(err => warn(`Health check failed: ${err.message}`));
+  fireUploadJob().catch(err => warn(`Upload dispatch failed: ${err.message}`));
 
   // Don't await them — just print system info immediately
   const elapsed = Date.now() - startTime;
@@ -278,8 +280,7 @@ async function main() {
   console.log('╚═══════════════════════════════════════════╝');
   console.log('');
 
-  // Wait for health in background (purely informational)
-  await Promise.allSettled([healthPromise, uploadPromise]);
+  // Health and upload dispatch continue in the background.
 }
 
 main().catch(err => {

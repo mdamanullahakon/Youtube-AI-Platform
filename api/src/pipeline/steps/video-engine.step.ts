@@ -1,4 +1,6 @@
 import path from 'path';
+import { existsSync } from 'fs';
+import { stat } from 'fs/promises';
 import { PipelineStep } from '../pipeline-step';
 import { VideoEngineInput, VideoEngineOutput } from '../pipeline.types';
 import { prisma } from '../../config/db';
@@ -6,6 +8,8 @@ import { renderVideo } from '../../services/render.service';
 import { parseScriptScenes } from '../../utils/helpers';
 import { ViralQualityEngine } from '../../services/viral-quality.service';
 import { logger } from '../../utils/logger';
+import { validateVoiceoverAudioFile } from '../audio-validation';
+import { detectMoodFromTopic } from '../../services/cinematic-effects';
 
 export class VideoEngineStep extends PipelineStep<VideoEngineInput, VideoEngineOutput> {
   private viralQuality: ViralQualityEngine;
@@ -19,6 +23,7 @@ export class VideoEngineStep extends PipelineStep<VideoEngineInput, VideoEngineO
     if (!input.script) return 'Script is required for video rendering';
     if (!input.script.content) return 'Script content is empty';
     if (!input.projectId) return 'projectId is required';
+    if (!input.voiceover?.audioUrl) return 'Voiceover audio is required before video rendering';
     return null;
   }
 
@@ -57,24 +62,26 @@ export class VideoEngineStep extends PipelineStep<VideoEngineInput, VideoEngineO
 
     const outputPath = path.join(process.cwd(), 'uploads', 'videos', `${input.projectId}.mp4`);
 
-    // voiceoverPath from input may be relative; resolve to absolute
-    let voiceoverPath: string | undefined;
-    if (input.voiceover?.audioUrl) {
-      const absPath = path.join(process.cwd(), input.voiceover.audioUrl.replace(/^\//, ''));
-      const { existsSync } = await import('fs');
-      if (existsSync(absPath)) {
-        voiceoverPath = absPath;
-      }
-    }
+    const voiceoverPath = await validateVoiceoverAudioFile(input.voiceover!.audioUrl);
 
-    const videoUrl = await renderVideo({
+    await renderVideo({
       scenes: optimizedScenes,
       topic: input.topic,
       title: input.topic,
       voiceoverPath,
       outputPath,
-      mood: moodFromTopic,
+      mood: detectMoodFromTopic(input.topic || '') || moodFromTopic,
     });
+
+    if (!existsSync(outputPath)) {
+      throw new Error(`Rendered video file missing: ${outputPath}`);
+    }
+    const fileStat = await stat(outputPath);
+    if (fileStat.size < 2048) {
+      throw new Error(`Rendered video file too small (${fileStat.size} bytes)`);
+    }
+
+    const videoUrl = `/uploads/videos/${input.projectId}.mp4`;
 
     await prisma.videoRender.upsert({
       where: { projectId: input.projectId },
@@ -94,16 +101,7 @@ export class VideoEngineStep extends PipelineStep<VideoEngineInput, VideoEngineO
     };
   }
 
-  async fallback(input: VideoEngineInput, error: Error): Promise<VideoEngineOutput> {
-    await prisma.videoProject.update({
-      where: { id: input.projectId },
-      data: { status: 'rendered' },
-    }).catch(() => {});
-
-    return {
-      renderId: input.projectId,
-      videoUrl: '',
-      duration: 0,
-    };
+  async fallback(_input: VideoEngineInput, error: Error): Promise<VideoEngineOutput> {
+    throw new Error(`Video rendering failed after retries: ${error.message}`);
   }
 }

@@ -1,6 +1,13 @@
 import { logger } from '../utils/logger';
 import type { ParsedScene } from '../utils/helpers';
 import { ViralQualityEngine } from './viral-quality.service';
+import {
+  detectMoodFromTopic,
+  mapCameraToZoom,
+  selectCameraMotion,
+  type SceneMood,
+  type CameraMotion,
+} from './cinematic-effects';
 
 export interface ScenePlan {
   index: number;
@@ -11,6 +18,9 @@ export interface ScenePlan {
   accentColor: string;
   zoomDirection: 'in' | 'out' | 'none';
   visualPrompt: string;
+  mood: SceneMood;
+  cameraMotion: CameraMotion;
+  transition: 'fade' | 'dissolve' | 'cut';
 }
 
 interface SceneTheme {
@@ -75,11 +85,13 @@ export async function planScenes(scenes: ParsedScene[], topic?: string): Promise
 
   const plans: ScenePlan[] = [];
   const topicLower = (topic || '').toLowerCase();
+  const globalMood = detectMoodFromTopic(topicLower);
 
   for (let i = 0; i < enrichedScenes.length; i++) {
     const scene = enrichedScenes[i];
     const palette = selectPalette(i, themeIndexFromTopic(topicLower, i));
-    const zoom = ZOOM_OPTIONS[i % ZOOM_OPTIONS.length];
+    const cameraMotion = selectCameraMotion(i, globalMood);
+    const zoom = mapCameraToZoom(cameraMotion);
 
     // ─── SAFETY: enforce duration limits ────────────────────────────────────
     const duration = Math.max(MIN_SCENE_DURATION, Math.min(scene.duration || 10, MAX_SCENE_DURATION));
@@ -98,6 +110,9 @@ export async function planScenes(scenes: ParsedScene[], topic?: string): Promise
       accentColor: palette.accentColor,
       zoomDirection: duration < 4 ? 'none' : zoom,
       visualPrompt: scene.visualPrompt || palette.description,
+      mood: globalMood,
+      cameraMotion,
+      transition: i === 0 || i === enrichedScenes.length - 1 ? 'fade' : 'dissolve',
     });
   }
 

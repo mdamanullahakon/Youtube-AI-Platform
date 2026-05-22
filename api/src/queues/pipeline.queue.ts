@@ -1,8 +1,22 @@
+/**
+ * @deprecated Production uses sync PipelineOrchestrator via canonical-pipeline.service.
+ * FlowProducer paths are disabled unless ENABLE_LEGACY_QUEUE_PIPELINE=true.
+ */
 import { FlowProducer } from 'bullmq';
 import { redisConnection } from '../config/redis';
 import { prisma } from '../config/db';
 import { queueLogger } from '../utils/logger';
+import { isLegacyQueuePipelineEnabled } from '../pipeline/canonical-pipeline.service';
 import type { RenderJobData, UploadJobData, AnalyticsJobData, TrendJobData, ScriptJobData } from './video.queue';
+
+function assertLegacyPipelineAllowed(): void {
+  if (!isLegacyQueuePipelineEnabled()) {
+    throw new Error(
+      'BullMQ FlowProducer pipeline is disabled. Use canonical sync pipeline (POST /api/videos/generate/new). ' +
+      'Set ENABLE_LEGACY_QUEUE_PIPELINE=true only for debugging.',
+    );
+  }
+}
 
 export const pipelineFlow = new FlowProducer({
   connection: redisConnection,
@@ -14,6 +28,8 @@ export interface PipelineFlowResult {
 }
 
 export async function createFullPipelineFlow(projectId: string, topic: string, channelId?: string): Promise<PipelineFlowResult> {
+  assertLegacyPipelineAllowed();
+  queueLogger.warn(`[DEPRECATED] createFullPipelineFlow for project ${projectId}`);
   queueLogger.info(`Creating pipeline flow for project ${projectId}: ${topic} (channel: ${channelId || 'none'})`);
 
   const channel = channelId || undefined;
@@ -105,6 +121,8 @@ export async function createFullPipelineFlow(projectId: string, topic: string, c
 }
 
 export async function createScriptToRenderFlow(projectId: string, channelId?: string) {
+  assertLegacyPipelineAllowed();
+  queueLogger.warn(`[DEPRECATED] createScriptToRenderFlow for project ${projectId}`);
   const channel = channelId || undefined;
   queueLogger.info(`Creating script-to-render flow for project ${projectId}`);
 

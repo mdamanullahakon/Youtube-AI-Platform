@@ -149,14 +149,18 @@ export async function generateVideoNow(req: Request, res: Response, next: NextFu
       },
     });
 
-    const { videoQueue } = require('../queues/video.queue');
-    await videoQueue.add('generate-video', {
-      projectId: project.id,
-      topic,
-      userId: (req as any).user?.id,
+    const { enqueueCanonicalPipeline } = require('../pipeline/canonical-pipeline.service');
+    const jobId = await enqueueCanonicalPipeline(project.id, topic, {
+      userId: (req as any).user?.id || project.userId,
     });
 
-    res.json({ success: true, message: 'Video generation queued', projectId: project.id });
+    res.json({
+      success: true,
+      pipeline: 'canonical-sync',
+      message: 'Canonical pipeline queued',
+      projectId: project.id,
+      jobId,
+    });
   } catch (err: any) {
     next(err);
   }
@@ -167,10 +171,20 @@ export async function regenerateScript(req: Request, res: Response, next: NextFu
     const { projectId } = req.params;
     if (!projectId) return res.status(400).json({ success: false, message: 'Project ID required' });
 
-    const { scriptQueue } = require('../queues/video.queue');
-    await scriptQueue.add('generate-script', { projectId });
+    const project = await prisma.videoProject.findUnique({ where: { id: projectId as string } });
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
 
-    res.json({ success: true, message: 'Script regeneration queued' });
+    const { enqueueCanonicalPipeline } = require('../pipeline/canonical-pipeline.service');
+    const jobId = await enqueueCanonicalPipeline(project.id, project.topic, { userId: project.userId });
+
+    res.json({
+      success: true,
+      pipeline: 'canonical-sync',
+      message: 'Canonical pipeline re-queued',
+      jobId,
+    });
   } catch (err: any) {
     next(err);
   }

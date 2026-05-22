@@ -68,7 +68,7 @@ export async function generateThumbnail(
     - Create curiosity gap
     - Emotional expression
     - Bold, contrasting colors
-    - Minimal text (max 3 words)
+    - Bold overlay text: MAX 3-5 words only, high contrast, readable at small size
     - Close-up face with strong emotion
     - Bright, eye-catching design
     - Dark background with vibrant subject

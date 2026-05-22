@@ -31,6 +31,7 @@ const STEP_TO_STATE: Record<string, PipelineState> = {
   ScriptEngine: PipelineState.SCRIPT_GENERATED,
   VoiceEngine: PipelineState.VOICE_GENERATED,
   VideoEngine: PipelineState.VIDEO_RENDERED,
+  VideoValidation: PipelineState.VIDEO_RENDERED,
   ThumbnailEngine: PipelineState.THUMBNAIL_CREATED,
   UploadEngine: PipelineState.UPLOADED,
   AnalyticsEngine: PipelineState.ANALYTICS_COLLECTED,

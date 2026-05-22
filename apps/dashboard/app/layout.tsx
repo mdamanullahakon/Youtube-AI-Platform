@@ -13,6 +13,8 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'YouTube AI Platform - Autonomous Content OS',
   description: 'Full autonomous AI-powered YouTube growth platform',

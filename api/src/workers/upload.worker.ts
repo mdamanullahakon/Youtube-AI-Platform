@@ -12,11 +12,14 @@ import { FeedbackLoopService } from '../services/feedback-loop.service';
 import { activateFallback, queueUploadForFallback, isFallbackActive, deactivateFallback } from '../services/youtube-fallback.service';
 import { classifyOAuthError } from '../utils/oauth-error-classifier';
 import { OutputValidationGate } from '../services/output-validation.service';
+import { PreUploadValidationGate } from '../services/pre-upload-validation.service';
 import { parseScriptScenes } from '../utils/helpers';
 import { uploadQueue } from '../queues/video.queue';
 
 const cleanupService = new AutoCleanupService();
 const feedbackLoop = new FeedbackLoopService();
+const validationGate = new OutputValidationGate();
+const preUploadGate = new PreUploadValidationGate();
 const UPLOAD_QUEUE_NAME = uploadQueue.name;
 
 logger.info(`[UPLOAD_TRACE] Initializing upload worker for queue "${UPLOAD_QUEUE_NAME}"`);
@@ -71,8 +74,20 @@ const worker = new Worker(
       throw new Error(`[UPLOAD_TRACE] Video file not found at: ${videoPath}`);
     }
 
-    // ─── FINAL VALIDATION GATE: run all quality checks before upload ───
-    const validationGate = new OutputValidationGate();
+    const thumbRel = project.thumbnail?.imageUrl;
+    const thumbAbs = thumbRel
+      ? (thumbRel.startsWith('/') ? join(process.cwd(), thumbRel.replace(/^\//, '')) : thumbRel)
+      : undefined;
+
+    const preUpload = await preUploadGate.validate({
+      videoPath,
+      thumbnailPath: thumbRel,
+      requireThumbnail: true,
+    });
+    if (!preUpload.passed) {
+      throw new Error(`Pre-upload validation failed: ${preUpload.blockers.join(', ')}`);
+    }
+
     const scenes = project.script?.content ? parseScriptScenes(project.script.content) : [];
     const validationResult = await validationGate.validateVideo(videoPath, scenes, undefined, project.title || project.topic);
     if (!validationResult.passed) {
@@ -107,9 +122,7 @@ const worker = new Worker(
         description: project.description || '',
         tags: [project.topic],
         videoPath,
-        thumbnailPath: project.thumbnail?.imageUrl
-          ? join(process.cwd(), project.thumbnail.imageUrl)
-          : undefined,
+        thumbnailPath: thumbAbs,
         userId: project.userId,
         channelId: targetChannelId,
       });

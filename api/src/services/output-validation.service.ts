@@ -150,11 +150,13 @@ export class OutputValidationGate {
 
       const details = [`Video: ${videoStreams.length} stream(s)`];
 
-      if (audioPath && existsSync(audioPath)) {
-        if (audioStreams.length === 0) {
-          return { name: 'stream-mapping', passed: false, detail: 'Audio file provided but no audio stream in output', severity: 'block' };
-        }
-        details.push(`Audio: ${audioStreams.length} stream(s)`);
+      if (audioStreams.length === 0) {
+        return { name: 'stream-mapping', passed: false, detail: 'No audio stream in output video — silent upload blocked', severity: 'block' };
+      }
+      details.push(`Audio: ${audioStreams.length} stream(s)`);
+
+      if (audioPath && existsSync(audioPath) && audioStreams.length === 0) {
+        return { name: 'stream-mapping', passed: false, detail: 'Voiceover provided but no audio stream in output', severity: 'block' };
       }
 
       // Check for corruption: validate codec parameters exist
@@ -179,8 +181,8 @@ export class OutputValidationGate {
 
     try {
       const videoDuration = await this.getMediaDuration(videoPath);
-      if (videoDuration < 10) {
-        return { name: 'video-duration', passed: false, detail: `Video too short: ${videoDuration.toFixed(1)}s (min 10s)`, severity: 'block' };
+      if (videoDuration < 30) {
+        return { name: 'video-duration', passed: false, detail: `Video too short: ${videoDuration.toFixed(1)}s (min 30s)`, severity: 'block' };
       }
 
       return { name: 'video-duration', passed: true, detail: `Video: ${videoDuration.toFixed(1)}s`, severity: 'block' };
