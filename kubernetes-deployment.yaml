@@ -1,0 +1,157 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: youtube-ai-api
+  namespace: youtube-ai
+  labels:
+    app: youtube-ai
+    tier: api
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: youtube-ai
+      tier: api
+  template:
+    metadata:
+      labels:
+        app: youtube-ai
+        tier: api
+    spec:
+      serviceAccountName: youtube-ai
+      imagePullSecrets:
+        - name: docker-registry-secret
+      containers:
+      - name: api
+        image: <REGISTRY>/youtube-ai:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 3001
+        - name: metrics
+          containerPort: 9090
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: redis-url
+        - name: ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: encryption-key
+        - name: YOUTUBE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: youtube-client-id
+        - name: YOUTUBE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: youtube-client-secret
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: openai-api-key
+        - name: ELEVENLABS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: elevenlabs-api-key
+        - name: S3_BUCKET
+          value: "youtube-ai-prod"
+        - name: AWS_REGION
+          value: "us-east-1"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - youtube-ai
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: youtube-ai-worker
+  namespace: youtube-ai
+  labels:
+    app: youtube-ai
+    tier: worker
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: youtube-ai
+      tier: worker
+  template:
+    metadata:
+      labels:
+        app: youtube-ai
+        tier: worker
+    spec:
+      serviceAccountName: youtube-ai
+      containers:
+      - name: worker
+        image: <REGISTRY>/youtube-ai:latest
+        command: ["npm", "run", "workers"]
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: youtube-ai-secrets
+              key: redis-url
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1000m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"

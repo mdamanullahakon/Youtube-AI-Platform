@@ -13,15 +13,28 @@ const worker = new Worker(
     switch (job.name) {
       case 'full-pipeline': {
         await job.updateProgress(0);
-        const { projectId, topic } = job.data as { projectId: string; topic: string };
+        const { projectId, topic, userId, channelId } = job.data as {
+          projectId: string;
+          topic: string;
+          userId?: string;
+          channelId?: string;
+        };
         const project = await prisma.videoProject.findUnique({ where: { id: projectId } });
         const pipelineTopic = topic || project?.topic || 'trending topic';
 
-        const orchestrator = new AIOrchestrator(projectId);
+        queueLogger.info(`[CanonicalPipeline] Job ${job.id} starting sync pipeline for project ${projectId}`);
+
+        const orchestrator = new AIOrchestrator(
+          projectId,
+          channelId || project?.channelId || undefined,
+          userId || project?.userId,
+        );
         const result = await orchestrator.runFullPipeline(pipelineTopic);
 
         await job.updateProgress(100);
-        queueLogger.info(`Pipeline flow created for project ${projectId}`);
+        queueLogger.info(`[CanonicalPipeline] Job ${job.id} finished for project ${projectId}`, {
+          status: (result as { status?: string }).status,
+        });
         return result;
       }
 

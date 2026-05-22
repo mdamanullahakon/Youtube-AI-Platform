@@ -1,0 +1,52 @@
+/* theme.css - defines CSS variables for light and dark themes */
+:root {
+  /* Allow OS preference to decide default */
+  color-scheme: light dark;
+}
+
+/* Light theme */
+:root[data-theme="light"] {
+  --bg-color: hsl(210, 25%, 96%);
+  --surface-color: rgba(255,255,255,0.85);
+  --primary-color: hsl(45, 80%, 55%);
+  --text-primary: hsl(210, 10%, 20%);
+  --text-secondary: hsl(210, 10%, 40%);
+}
+
+/* Dark theme */
+:root[data-theme="dark"] {
+  --bg-color: hsl(220, 30%, 12%);
+  --surface-color: rgba(0,0,0,0.45);
+  --primary-color: hsl(45, 80%, 55%);
+  --text-primary: hsl(0, 0%, 90%);
+  --text-secondary: hsl(0, 0%, 70%);
+}
+
+/* Global layout */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-color);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+}
+
+/* Glassmorphism card */
+.glass-card {
+  background: var(--surface-color);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  padding: 1rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.glass-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+}
+
+/* Smooth theme transitions */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}

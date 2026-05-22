@@ -28,7 +28,10 @@ vi.mock('bullmq', () => {
 import { createFullPipelineFlow, createScriptToRenderFlow, getPipelineTreeStatus } from '../../../queues/pipeline.queue';
 
 describe('Pipeline Queue', () => {
-  beforeEach(() => { vi.clearAllMocks(); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.ENABLE_LEGACY_QUEUE_PIPELINE = 'true';
+  });
 
   describe('createFullPipelineFlow', () => {
     it('should create a pipeline and update project status', async () => {

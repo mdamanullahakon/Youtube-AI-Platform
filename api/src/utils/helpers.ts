@@ -32,6 +32,9 @@ export interface ParsedScene {
   text: string;
   duration: number;
   visualPrompt: string;
+  mood?: string;
+  pacing?: string;
+  retentionHook?: string;
 }
 
 export async function detectGpuEncoder(ffmpegPath: string): Promise<'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'libx264'> {
@@ -65,6 +68,9 @@ export function parseScriptScenes(content: string): ParsedScene[] {
         text: parts[0] || 'Scene content',
         duration: Math.max(6, Math.min(parseInt(parts[1]?.match(/\d+/)?.[0] || '10'), 20)),
         visualPrompt: parts[2] || 'cinematic shot',
+        mood: parts[3] || undefined,
+        pacing: parts[4] || undefined,
+        retentionHook: parts[5] || undefined,
       });
     }
   }

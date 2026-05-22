@@ -61,7 +61,14 @@ export interface ScriptEngineOutput {
   content: string;
   hook: string;
   wordCount: number;
-  scenes: { text: string; duration: number; visualPrompt: string }[];
+  scenes: {
+    text: string;
+    duration: number;
+    visualPrompt: string;
+    mood?: string;
+    pacing?: string;
+    retentionHook?: string;
+  }[];
 }
 
 export interface VoiceEngineInput extends PipelineStepInput {
@@ -81,6 +88,18 @@ export interface VideoEngineOutput {
   renderId: string;
   videoUrl: string;
   duration: number;
+}
+
+export interface VideoValidationInput extends PipelineStepInput {
+  script: ScriptEngineOutput;
+  voiceover: VoiceEngineOutput;
+  video: VideoEngineOutput;
+}
+export interface VideoValidationOutput {
+  validated: boolean;
+  videoUrl: string;
+  durationSec: number;
+  resolution: string;
 }
 
 export interface ThumbnailEngineInput extends PipelineStepInput {

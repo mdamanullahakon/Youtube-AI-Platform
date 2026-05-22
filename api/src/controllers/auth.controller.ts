@@ -451,6 +451,9 @@ async function ensureUser(userId: string): Promise<{ id: string; email: string; 
 }
 
 export async function getProfile(req: AuthRequest, res: Response) {
+  if (!req.userId) {
+    return res.status(404).json({ success: false, message: 'Profile not found' });
+  }
   try {
     apiLogger.info('Get profile called', { userId: req.userId, path: req.path, hasToken: !!req.token });
 

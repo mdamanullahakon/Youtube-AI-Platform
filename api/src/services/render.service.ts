@@ -12,17 +12,27 @@ import { escapeFilter } from './motion.service';
 import { resolveFontPath, escapeFontPath } from '../config/font-resolver';
 import { fetchBackgroundImage } from './image.service';
 import { generateBackgroundAudio, selectMood } from './music.service';
+import {
+  buildCameraMotionFilter,
+  buildColorGradeFilter,
+  buildCinematicOverlayFilter,
+  buildSceneFadeFilter,
+  detectMoodFromTopic,
+  xfadeTransitionForMood,
+} from './cinematic-effects';
 import type { ParsedScene } from '../utils/helpers';
+import type { ScenePlan } from './scene.service';
 
 const execAsync = promisify(exec);
 const FPS = 30;
 const RESOLUTION = '1920x1080';
-const TRANSITION_DURATION = 0.4;
+const TRANSITION_DURATION = 0.5;
+const MIN_OUTPUT_DURATION_SEC = 30;
 const MIN_SCENE_DURATION = 6;
 const MAX_SCENE_DURATION = 16;
 const SCENE_RETRIES = 3;
 const MAX_COMMAND_LENGTH = 7000;
-const MAX_FILTER_NODES = 7;
+const MAX_FILTER_NODES = 12;
 const MIN_OUTPUT_SIZE = 2048;
 
 interface RenderOptions {
@@ -105,10 +115,11 @@ export async function renderVideo(options: RenderOptions): Promise<string> {
       await renderBaseSceneWithRetry(validScenes[i], bgImages[i], ffmpegPath, scenePath, i);
     }
 
-    // ── 7. Background music ────────────────────────────────────────────────
+    // ── 7. Background music + ambient layer (immersive mix) ────────────────
     if (!options.musicPath && options.voiceoverPath && existsSync(options.voiceoverPath)) {
       const musicTempPath = join(tempDir, 'bgm_mixed.wav');
-      const mood = selectMood(options.mood || 'curiosity');
+      const cinematicMood = options.mood || detectMoodFromTopic(options.topic || '');
+      const mood = selectMood(cinematicMood === 'dark' || cinematicMood === 'suspense' ? 'suspense' : cinematicMood);
       const musicResult = await generateBackgroundAudio(options.voiceoverPath, musicTempPath, mood);
       if (musicResult) {
         options = { ...options, musicPath: musicTempPath };
@@ -258,6 +269,7 @@ async function renderBaseSceneWithRetry(
 
 // ─── BASE SCENE: BACKGROUND + ZOOM ONLY (0 DRAWTEXT) ─────────────────────────
 
+// Updated renderBaseScene to use camera motion filter and handle static scenes longer than 7s
 async function renderBaseScene(
   scene: ScenePlan,
   bgImagePath: string | null,
@@ -268,6 +280,12 @@ async function renderBaseScene(
   const duration = simplified
     ? Math.max(4, Math.min(scene.duration, 10))
     : Math.max(MIN_SCENE_DURATION, Math.min(scene.duration, MAX_SCENE_DURATION));
+
+  type CameraMotion = 'none' | 'slow-zoom' | 'shake';
+  let motion: CameraMotion = (scene.zoomDirection as CameraMotion) || 'none';
+  if (!simplified && duration > 7 && (motion === 'none')) {
+    motion = Math.random() < 0.5 ? 'slow-zoom' : 'shake';
+  }
 
   let cmd: string;
 
@@ -287,17 +305,17 @@ async function renderBaseScene(
         `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p "${outputPath}" -y`,
       ].join(' ');
     } else {
-      // Full: background + overlay + zoom
+      const grade = buildColorGradeFilter(scene.mood || 'story');
+      const overlay = buildCinematicOverlayFilter(scene.mood || 'story');
+      const fade = buildSceneFadeFilter(duration);
+      const zoomFilter = buildCameraMotionFilter(motion, duration);
+      const filterChain = `${zoomFilter},${grade},${overlay},${fade}`;
       cmd = [
         `"${ffmpegPath}"`,
         `-i "${escapedBg}"`,
-        `-f lavfi -i "color=c=0x${scene.bgColor}:s=${RESOLUTION}:d=${duration}:r=${FPS},format=rgba,colorchannelmixer=aa=0.85[base]"`,
-        `-filter_complex "`,
-        `[0:v]scale=1920:1080:force_original_aspect_ratio=1,crop=1920:1080,setsar=1,format=rgba,`,
-        `colorchannelmixer=aa=0.55[bg];`,
-        `[1][bg]overlay=0:0[bg2];`,
-        `[bg2]${buildZoomFilter(scene.zoomDirection, duration)},format=yuv420p"`,
-        `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p "${outputPath}" -y`,
+        `-f lavfi -i "color=c=0x${scene.bgColor}:s=${RESOLUTION}:d=${duration}:r=${FPS},format=rgba"`,
+        `-filter_complex "[0:v]scale=1920:1080:force_original_aspect_ratio=1,crop=1920:1080,setsar=1,format=rgba[bg];[1][bg]overlay=0:0[bgo];[bgo]${filterChain}[vout]"`,
+        `-map "[vout]" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p "${outputPath}" -y`,
       ].join(' ');
     }
   } else {
@@ -309,15 +327,15 @@ async function renderBaseScene(
         `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p "${outputPath}" -y`,
       ].join(' ');
     } else {
+      const grade = buildColorGradeFilter(scene.mood || 'story');
+      const fade = buildSceneFadeFilter(duration);
+      const zoomFilter = buildCameraMotionFilter(motion, duration);
+      const filterChain = `${zoomFilter},${grade},${fade}`;
       cmd = [
         `"${ffmpegPath}"`,
-        `-f lavfi -i "color=c=0x${scene.bgColor}:s=${RESOLUTION}:d=${duration}:r=${FPS},format=rgba"`,
-        `-filter_complex "`,
-        `color=c=0x${scene.accentColor}:s=${RESOLUTION}:d=${duration}:r=${FPS},`,
-        `format=rgba,colorchannelmixer=aa=0.2[grad];`,
-        `[0][grad]overlay=0:0[bg];`,
-        `[bg]${buildZoomFilter(scene.zoomDirection, duration)},format=yuv420p"`,
-        `-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p "${outputPath}" -y`,
+        `-f lavfi -i "color=c=0x${scene.accentColor}:s=${RESOLUTION}:d=${duration}:r=${FPS},format=rgba"`,
+        `-filter_complex "color=c=0x${scene.bgColor}:s=${RESOLUTION}:d=${duration}:r=${FPS},format=rgba[bg];[bg][0]overlay=0:0[combined];[combined]${filterChain}[vout]"`,
+        `-map "[vout]" -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p "${outputPath}" -y`,
       ].join(' ');
     }
   }
@@ -363,29 +381,6 @@ async function renderFallbackScene(
   await execAsync(cmd, { timeout: 30000 });
 }
 
-// ─── ZOOM FILTER ─────────────────────────────────────────────────────────────
-
-function buildZoomFilter(direction: 'in' | 'out' | 'none', duration: number): string {
-  const totalFrames = Math.round(duration * FPS);
-  const zoomEnd = 1.06;
-
-  if (direction === 'none' || duration < 4) {
-    return 'scale=iw:ih,setsar=1';
-  }
-
-  if (direction === 'in') {
-    return [
-      `zoompan=z='if(lte(on,1),1,min(${zoomEnd},1+(${zoomEnd}-1)*(on/${totalFrames})))':`,
-      `x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${RESOLUTION}:fps=${FPS}`,
-    ].join('');
-  }
-
-  return [
-    `zoompan=z='if(lte(on,1),${zoomEnd},max(1,${zoomEnd}-(${zoomEnd}-1)*(on/${totalFrames})))':`,
-    `x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:s=${RESOLUTION}:fps=${FPS}`,
-  ].join('');
-}
-
 // ─── FFPROBE DURATION ────────────────────────────────────────────────────────
 
 function getDuration(path: string): Promise<number> {
@@ -409,9 +404,9 @@ function getDuration(path: string): Promise<number> {
 
 function videoCodec(encoder?: string): string {
   if (encoder && ['h264_nvenc', 'h264_qsv', 'h264_amf'].includes(encoder)) {
-    return `-c:v ${encoder} -preset p7 -cq 23`;
+    return `-c:v ${encoder} -preset p5 -cq 22 -b:v 8M`;
   }
-  return '-c:v libx264 -preset ultrafast -crf 26';
+  return '-c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p';
 }
 
 async function composeFinalVideo(
@@ -462,17 +457,19 @@ async function composeFinalVideo(
   // ─── Build filter_complex ─────────────────────────────────────────────────
   let filterComplex = '';
 
+  const composeMood = detectMoodFromTopic(options.topic || '');
+  const xfadeType = xfadeTransitionForMood(composeMood);
+
   if (sceneFiles.length >= 2) {
     const filterParts: string[] = [];
 
-    // xfade transitions between scenes
     for (let i = 1; i < sceneFiles.length; i++) {
       const offset = Math.max(0,
         durations.slice(0, i).reduce((a, b) => a + b, 0) - (i * TRANSITION_DURATION),
       );
       const prevLabel = i === 1 ? `[0:v:0][1:v:0]` : `[v${i - 1}][${i}:v:0]`;
       const outLabel = i < sceneFiles.length - 1 ? `[v${i}]` : `[vpre]`;
-      filterParts.push(`${prevLabel}xfade=transition=fade:duration=${TRANSITION_DURATION}:offset=${offset}${outLabel}`);
+      filterParts.push(`${prevLabel}xfade=transition=${xfadeType}:duration=${TRANSITION_DURATION}:offset=${offset}${outLabel}`);
     }
 
     let videoOut = '[vpre]';
@@ -488,7 +485,7 @@ async function composeFinalVideo(
     // ── SRT SUBTITLE BURN (PRIMARY TEXT RENDERING) ──────────────────────────
     if (tempFiles.srtFile && existsSync(tempFiles.srtFile)) {
       const srtPath = generateSrtFilterPath(tempFiles.srtFile);
-      const style = getSubtitleStyle();
+      const style = getSubtitleStyle(composeMood);
       filterParts.push(
         `${videoOut}subtitles='${srtPath}':force_style='${style}'[vsub]`,
       );
@@ -504,7 +501,7 @@ async function composeFinalVideo(
     // Single scene
     if (tempFiles.srtFile && existsSync(tempFiles.srtFile)) {
       const srtPath = generateSrtFilterPath(tempFiles.srtFile);
-      const style = getSubtitleStyle();
+      const style = getSubtitleStyle(composeMood);
       cmd += ` -vf "subtitles='${srtPath}':force_style='${style}',format=yuv420p"`;
     }
     cmd += ` -map 0:v:0`;
@@ -513,7 +510,7 @@ async function composeFinalVideo(
   // ─── Audio mapping ────────────────────────────────────────────────────────
   const codec = videoCodec(options.encoder);
   if (voiceoverIndex >= 0 && musicIndex >= 0) {
-    const mixLabel = `[${voiceoverIndex}:a:0]volume=1.0[voice];[${musicIndex}:a:0]volume=0.3[bgm];[voice][bgm]amix=inputs=2:duration=first:weights=1 0.3[aout]`;
+    const mixLabel = `[${voiceoverIndex}:a:0]volume=1.0[voice];[${musicIndex}:a:0]volume=0.22[bgm];[voice][bgm]amix=inputs=2:duration=first:weights=1 0.22[aout]`;
     cmd += ` -filter_complex "${mixLabel}" -map "[aout]" -c:a aac ${codec} -pix_fmt yuv420p -shortest`;
   } else if (voiceoverIndex >= 0) {
     cmd += ` -map ${voiceoverIndex}:a:0 -c:a aac ${codec} -pix_fmt yuv420p -shortest`;
@@ -558,8 +555,8 @@ async function validateOutput(
     issues.push('Failed to read video duration');
   }
 
-  if (videoDuration < 3) {
-    issues.push(`Video too short: ${videoDuration.toFixed(1)}s (minimum 3s)`);
+  if (videoDuration < MIN_OUTPUT_DURATION_SEC) {
+    issues.push(`Video too short: ${videoDuration.toFixed(1)}s (minimum ${MIN_OUTPUT_DURATION_SEC}s)`);
   }
 
   const ffprobe = process.env.FFPROBE_PATH || process.env.FFMPEG_PATH?.replace('ffmpeg', 'ffprobe') || 'ffprobe';
@@ -577,6 +574,7 @@ async function validateOutput(
 
   let audioDuration = 0;
   if (audioPath && existsSync(audioPath)) {
+    // Voice is mandatory when provided — output must contain audio stream
     try {
       audioDuration = await getDuration(audioPath);
     } catch {
@@ -589,11 +587,24 @@ async function validateOutput(
         { timeout: 10000 },
       );
       if (!stdout.trim()) {
-        issues.push('No audio stream found in output video');
+        issues.push('No audio stream found in output video — silent render rejected');
       }
     } catch {
       issues.push('Failed to probe audio stream');
     }
+  } else if (audioPath) {
+    issues.push('Voiceover path provided but file missing — cannot publish silent video');
+  }
+
+  try {
+    const { stdout: resOut } = await execAsync(
+      `"${ffprobe}" -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x:p=0 "${videoPath}"`,
+      { timeout: 10000 },
+    );
+    const [w, h] = resOut.trim().split('x').map(Number);
+    if (h && h < 720) issues.push(`Resolution ${w}x${h} below 720p minimum`);
+  } catch {
+    issues.push('Failed to read video resolution');
   }
 
   return {

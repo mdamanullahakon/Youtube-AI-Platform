@@ -1,6 +1,6 @@
 import { prisma } from '../../config/db';
 import { logger } from '../../utils/logger';
-import { createFullPipelineFlow } from '../../queues/pipeline.queue';
+import { enqueueCanonicalPipeline } from '../../pipeline/canonical-pipeline.service';
 import { postVideoComment } from '../youtube.service';
 import { IncomeVideoPlan, IncomeUploadResult } from './types';
 
@@ -110,10 +110,10 @@ export class UploadEngine {
 
   private async enqueuePipeline(projectId: string, topic: string, channelId?: string): Promise<void> {
     try {
-      const result = await createFullPipelineFlow(projectId, topic, channelId);
-      logger.info(`[UploadEngine] Pipeline flow ${result.pipelineJobId} created for project ${projectId}`);
+      const jobId = await enqueueCanonicalPipeline(projectId, topic, { channelId });
+      logger.info(`[UploadEngine] Canonical pipeline job ${jobId} enqueued for project ${projectId}`);
     } catch (err: any) {
-      logger.error(`[UploadEngine] Pipeline flow creation failed for project ${projectId}: ${err.message}`);
+      logger.error(`[UploadEngine] Canonical pipeline enqueue failed for project ${projectId}: ${err.message}`);
       throw err;
     }
   }

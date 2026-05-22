@@ -68,12 +68,7 @@ export class ThumbnailEngineStep extends PipelineStep<ThumbnailEngineInput, Thum
     };
   }
 
-  async fallback(input: ThumbnailEngineInput, _error: Error): Promise<ThumbnailEngineOutput> {
-    return {
-      thumbnailId: input.projectId,
-      imageUrl: null,
-      style: 'high-contrast-shock',
-      predictedCtr: 5.0,
-    };
+  async fallback(_input: ThumbnailEngineInput, error: Error): Promise<ThumbnailEngineOutput> {
+    throw new Error(`Thumbnail generation failed — upload blocked: ${error.message}`);
   }
 }

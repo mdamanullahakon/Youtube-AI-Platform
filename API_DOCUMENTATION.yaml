@@ -1,0 +1,319 @@
+# OpenAPI/Swagger Documentation for YouTube AI Platform
+openapi: 3.0.0
+info:
+  title: YouTube AI Automation Platform API
+  description: RESTful API for autonomous video content creation and upload
+  version: 1.0.0
+  contact:
+    name: Support
+    url: https://github.com/youtube-ai-platform
+
+servers:
+  - url: https://api.youtube-ai.example.com
+    description: Production
+  - url: http://localhost:3001
+    description: Development
+
+paths:
+  /api/pipeline/run:
+    post:
+      summary: Enqueue a new content pipeline job
+      description: Creates and enqueues a new job to generate script, voice, video, and thumbnail
+      tags:
+        - Pipeline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineRequest'
+      responses:
+        '202':
+          description: Job accepted and queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal server error
+      security:
+        - bearerAuth: []
+
+  /api/pipeline/{jobId}:
+    get:
+      summary: Get pipeline job status
+      tags:
+        - Pipeline
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineStatus'
+        '404':
+          description: Job not found
+        '500':
+          description: Internal server error
+      security:
+        - bearerAuth: []
+
+  /api/videos/{videoId}/metrics:
+    get:
+      summary: Get YouTube video metrics
+      description: Retrieve performance metrics for an uploaded video
+      tags:
+        - Videos
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: metricType
+          in: query
+          schema:
+            type: string
+            enum: [views, ctr, watchTime, engagement, all]
+            default: all
+      responses:
+        '200':
+          description: Video metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoMetrics'
+        '404':
+          description: Video not found
+        '500':
+          description: Internal server error
+      security:
+        - bearerAuth: []
+
+  /api/auth/youtube/callback:
+    get:
+      summary: YouTube OAuth2 callback
+      description: Handles OAuth2 callback from YouTube
+      tags:
+        - Authentication
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to dashboard on success
+        '400':
+          description: OAuth callback failed
+        '500':
+          description: Internal server error
+
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - System
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  timestamp:
+                    type: string
+                    format: date-time
+        '503':
+          description: System is unhealthy
+
+  /ready:
+    get:
+      summary: Readiness check
+      tags:
+        - System
+      responses:
+        '200':
+          description: System is ready
+        '503':
+          description: System is not ready
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      tags:
+        - System
+      responses:
+        '200':
+          description: Prometheus-formatted metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  schemas:
+    PipelineRequest:
+      type: object
+      required:
+        - topic
+      properties:
+        topic:
+          type: string
+          description: Video topic/title
+          example: "AI Automation for Beginners"
+        language:
+          type: string
+          enum: [en, bn]
+          default: en
+          description: Script language
+        tone:
+          type: string
+          enum: [engaging, educational, humorous, inspirational]
+          default: engaging
+        length:
+          type: string
+          enum: [short, medium, long]
+          default: medium
+          description: Video length category
+        tags:
+          type: array
+          items:
+            type: string
+          description: YouTube tags
+          example: ["AI", "tutorial", "automation"]
+
+    PipelineResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+          description: Unique job identifier
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        createdAt:
+          type: string
+          format: date-time
+        estimatedDuration:
+          type: integer
+          description: Estimated time in seconds
+
+    PipelineStatus:
+      type: object
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [pending, generating-script, synthesizing-audio, rendering-video, generating-thumbnail, uploading, completed, failed]
+        progress:
+          type: number
+          description: Progress percentage (0-100)
+        assets:
+          type: object
+          properties:
+            script:
+              type: string
+            audioUrl:
+              type: string
+            videoUrl:
+              type: string
+            thumbnailUrl:
+              type: string
+        viralScore:
+          type: object
+          properties:
+            overall:
+              type: number
+              description: Overall score (0-100)
+            recommendation:
+              type: string
+              enum: [go, revise, hold]
+        error:
+          type: string
+          description: Error message if job failed
+        completedAt:
+          type: string
+          format: date-time
+
+    VideoMetrics:
+      type: object
+      properties:
+        videoId:
+          type: string
+        title:
+          type: string
+        views:
+          type: integer
+        ctr:
+          type: number
+          description: Click-through rate percentage
+        watchTime:
+          type: number
+          description: Average watch time in seconds
+        likes:
+          type: integer
+        comments:
+          type: integer
+        shares:
+          type: integer
+        retention:
+          type: number
+          description: Average retention percentage
+        uploadedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+tags:
+  - name: Pipeline
+    description: Content generation pipeline operations
+  - name: Videos
+    description: Video and metrics operations
+  - name: Authentication
+    description: Authentication and authorization
+  - name: System
+    description: System health and metrics

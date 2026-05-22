@@ -56,6 +56,7 @@ import { ALL_QUEUES, queueMap, dlqMap } from './queues/video.queue';
 import { queueLogger } from './utils/logger';
 import { scheduleCleanupJobs } from './workers/cleanup.worker';
 import { closeAllIncomeWorkers } from './services/income-system-v2/income.workers';
+import { isIncomeSystemEnabled } from './pipeline/canonical-pipeline.service';
 import { StorageManager } from './services/storage.service';
 import { storageGuard, storageGuardForRender } from './middleware/storageGuard';
 import { createCsrfMiddleware } from './middleware/csrf';
@@ -97,19 +98,31 @@ async function startWorkersIfRedisAvailable() {
 
   workersStarted = true;
 
-  // Lazy-import workers only when Redis is confirmed available
-  await Promise.allSettled([
+  // Canonical production path: video.worker runs sync PipelineOrchestrator only.
+  const workerImports: Promise<unknown>[] = [
     import('./workers/video.worker'),
-    import('./workers/trend.worker'),
-    import('./workers/script.worker'),
-    import('./workers/render.worker'),
     import('./workers/upload.worker'),
-    import('./workers/analytics.worker'),
-    import('./workers/agent.worker'),
-    import('./workers/transcript.worker'),
     import('./workers/cleanup.worker'),
-    import('./services/income-system-v2/income.workers'),
-  ]);
+    import('./workers/transcript.worker'),
+  ];
+
+  if (process.env.ENABLE_LEGACY_QUEUE_PIPELINE === 'true') {
+    queueLogger.warn('ENABLE_LEGACY_QUEUE_PIPELINE=true — loading deprecated step workers');
+    workerImports.push(
+      import('./workers/trend.worker'),
+      import('./workers/script.worker'),
+      import('./workers/render.worker'),
+      import('./workers/analytics.worker'),
+      import('./workers/agent.worker'),
+    );
+  }
+
+  if (isIncomeSystemEnabled()) {
+    queueLogger.info('ENABLE_INCOME_SYSTEM_V2=true — loading income workers');
+    workerImports.push(import('./services/income-system-v2/income.workers'));
+  }
+
+  await Promise.allSettled(workerImports);
 
   // Wire up dead-letter queue forwarding
   for (const { name, events, dlq } of ALL_QUEUES) {
@@ -518,6 +531,16 @@ app.listen(PORT, async () => {
 
   // Start workers after Redis check
   await startWorkersIfRedisAvailable();
+
+  // Development: optionally load local legacy pipeline worker for Phase1 scaffolding
+  if (process.env.ENABLE_LOCAL_LEGACY_WORKERS === 'true') {
+    try {
+      await import('./workers/pipeline.worker');
+      logger.info('Local legacy pipeline worker loaded');
+    } catch (err: any) {
+      logger.warn('Failed to load local legacy pipeline worker', { error: err.message || err });
+    }
+  }
 
   // ─── YouTube OAuth deep validation ──────────────────────
   try {

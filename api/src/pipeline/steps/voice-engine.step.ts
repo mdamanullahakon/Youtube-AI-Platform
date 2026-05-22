@@ -2,6 +2,7 @@ import { PipelineStep } from '../pipeline-step';
 import { VoiceEngineInput, VoiceEngineOutput } from '../pipeline.types';
 import { prisma } from '../../config/db';
 import { createVoiceover } from '../../agents/voiceover.agent';
+import { validateVoiceoverAudioFile } from '../audio-validation';
 
 export class VoiceEngineStep extends PipelineStep<VoiceEngineInput, VoiceEngineOutput> {
   constructor() {
@@ -18,6 +19,12 @@ export class VoiceEngineStep extends PipelineStep<VoiceEngineInput, VoiceEngineO
   protected async execute(input: VoiceEngineInput): Promise<VoiceEngineOutput> {
     const result = await createVoiceover(input.script.content, input.projectId, 'en', 'narrative');
 
+    if (!result.audioUrl) {
+      throw new Error('Voice generation failed: no audio file produced');
+    }
+
+    await validateVoiceoverAudioFile(result.audioUrl);
+
     await prisma.voiceover.upsert({
       where: { projectId: input.projectId },
       update: {
@@ -26,7 +33,7 @@ export class VoiceEngineStep extends PipelineStep<VoiceEngineInput, VoiceEngineO
         duration: result.duration,
         language: result.language,
         tone: result.tone,
-        status: result.audioUrl ? 'completed' : 'failed',
+        status: 'completed',
       },
       create: {
         projectId: input.projectId,
@@ -35,22 +42,18 @@ export class VoiceEngineStep extends PipelineStep<VoiceEngineInput, VoiceEngineO
         duration: result.duration,
         language: result.language,
         tone: result.tone,
-        status: result.audioUrl ? 'completed' : 'failed',
+        status: 'completed',
       },
     });
 
     return {
-      audioUrl: result.audioUrl || null,
+      audioUrl: result.audioUrl,
       duration: result.duration || 0,
-      voiceoverId: result.audioUrl ? input.projectId : null,
+      voiceoverId: input.projectId,
     };
   }
 
-  async fallback(_input: VoiceEngineInput, _error: Error): Promise<VoiceEngineOutput> {
-    return {
-      audioUrl: null,
-      duration: 0,
-      voiceoverId: null,
-    };
+  async fallback(_input: VoiceEngineInput, error: Error): Promise<VoiceEngineOutput> {
+    throw new Error(`Voice generation failed after retries — no silent video allowed: ${error.message}`);
   }
 }

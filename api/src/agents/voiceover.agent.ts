@@ -15,7 +15,8 @@ export async function generateVoiceoverContent(
 ): Promise<{ cleanedText: string; ssmlText: string }> {
   // Use regex-based cleanup directly (faster and more reliable than AI for this task)
   const cleanedText = scriptContent
-    .replace(/\[.*?\]/g, '')
+    // Remove all bracketed tags except [PAUSE] and [BREATH]
+    .replace(/\[(?!PAUSE|BREATH).*?\]/g, '')
     .replace(/---\w+---/g, '')
     .replace(/Scene \d+:?/gi, '')
     .replace(/\(.*?\)/g, '')
@@ -55,6 +56,8 @@ function convertToSSML(text: string, tone: string, language: string): string {
 <speak version="1.1" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${language}">
   <prosody rate="${rate}" pitch="medium">
     ${text
+      .replace(/\[PAUSE\]/g, '<break time="1500ms"/>')
+      .replace(/\[BREATH\]/g, '<break time="800ms"/>')
       .replace(/\.\.\./g, '<break time="600ms"/>')
       .replace(/\./g, '<break time="250ms"/>')
       .replace(/\!/g, '<break time="300ms"/>')

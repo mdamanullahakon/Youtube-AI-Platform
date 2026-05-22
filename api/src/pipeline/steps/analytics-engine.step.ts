@@ -101,12 +101,8 @@ export class AnalyticsEngineStep extends PipelineStep<AnalyticsEngineInput, Anal
     };
   }
 
-  async fallback(input: AnalyticsEngineInput, _error: Error): Promise<AnalyticsEngineOutput> {
-    return {
-      analyticsId: input.projectId,
-      views: 0,
-      ctr: 0,
-      retention: 0,
-    };
+  async fallback(input: AnalyticsEngineInput, error: Error): Promise<AnalyticsEngineOutput> {
+    pipelineLogger.warn(`Analytics collection failed for ${input.projectId}: ${error.message}`);
+    throw new Error(`Analytics collection failed: ${error.message}`);
   }
 }

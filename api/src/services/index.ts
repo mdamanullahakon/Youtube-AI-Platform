@@ -50,3 +50,4 @@ export {
   incomeWorkers,
   closeAllIncomeWorkers,
 } from './income-system-v2';
+export { SeriesIntelligenceService } from './series-intelligence.service';

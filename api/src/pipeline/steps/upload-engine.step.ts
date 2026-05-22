@@ -1,4 +1,5 @@
 import { existsSync } from 'fs';
+import { join } from 'path';
 import { PipelineStep } from '../pipeline-step';
 import { UploadEngineInput, UploadEngineOutput } from '../pipeline.types';
 import { prisma } from '../../config/db';
@@ -11,6 +12,7 @@ import { ThumbnailIntelligence } from '../../services/thumbnail-intelligence.ser
 import { RevenueMultiplier } from '../../services/revenue-multiplier.service';
 import { SmartExperimentation } from '../../services/smart-experimentation.service';
 import { OutputValidationGate } from '../../services/output-validation.service';
+import { PreUploadValidationGate } from '../../services/pre-upload-validation.service';
 import { parseScriptScenes } from '../../utils/helpers';
 import { logger } from '../../utils/logger';
 import { MonetizationOrchestrator } from '../../services/monetization/monetization-orchestrator.service';
@@ -22,6 +24,7 @@ export class UploadEngineStep extends PipelineStep<UploadEngineInput, UploadEngi
   private revenueMultiplier: RevenueMultiplier;
   private experimentation: SmartExperimentation;
   private validationGate: OutputValidationGate;
+  private preUploadGate: PreUploadValidationGate;
   private monetizationOrchestrator: MonetizationOrchestrator;
 
   constructor() {
@@ -32,12 +35,14 @@ export class UploadEngineStep extends PipelineStep<UploadEngineInput, UploadEngi
     this.revenueMultiplier = new RevenueMultiplier();
     this.experimentation = new SmartExperimentation();
     this.validationGate = new OutputValidationGate();
+    this.preUploadGate = new PreUploadValidationGate();
     this.monetizationOrchestrator = new MonetizationOrchestrator();
   }
 
   validate(input: UploadEngineInput): string | null {
     if (!input.video) return 'Video render is required before upload';
     if (!input.video.videoUrl) return 'Video URL is missing';
+    if (!input.thumbnail?.imageUrl) return 'Thumbnail is required before upload';
     if (!input.projectId) return 'projectId is required';
     return null;
   }
@@ -94,26 +99,36 @@ export class UploadEngineStep extends PipelineStep<UploadEngineInput, UploadEngi
       } catch {}
     }
 
-    // FINAL VALIDATION GATE — 9 checks before upload
-    const scenes = input.script?.scenes?.length ? parseScriptScenes(input.script.content) : [];
-    const videoPath = input.video.videoUrl;
+    const scenes = parseScriptScenes(input.script.content);
+    const videoPath = input.video.videoUrl.startsWith('/')
+      ? join(process.cwd(), input.video.videoUrl.replace(/^\//, ''))
+      : input.video.videoUrl;
 
-    if (videoPath && existsSync(videoPath)) {
-      const validation = await this.validationGate.validateVideo(videoPath, scenes);
-      if (!validation.passed) {
-        const blockerNames = validation.checks.filter(c => !c.passed && c.severity === 'block').map(c => c.name);
-        const errMsg = `VALIDATION BLOCKED (${blockerNames.join(', ')}): ${validation.summary}`;
-        logger.error(`[UploadGate] ${errMsg}`);
-        await prisma.videoProject.update({
-          where: { id: input.projectId },
-          data: { status: 'validation_failed' },
-        });
-        throw new Error(`UPLOAD_BLOCKED: ${errMsg}`);
-      }
-      logger.info(`[UploadGate] ${validation.summary}`);
-    } else {
-      logger.warn('[UploadGate] Video file not found on disk — skipping validation, attempting upload anyway');
+    const thumbnailPath = input.thumbnail.imageUrl!.startsWith('/')
+      ? join(process.cwd(), input.thumbnail.imageUrl!.replace(/^\//, ''))
+      : input.thumbnail.imageUrl!;
+
+    const preUpload = await this.preUploadGate.validate({
+      videoPath,
+      thumbnailPath: input.thumbnail.imageUrl,
+      requireThumbnail: true,
+    });
+    if (!preUpload.passed) {
+      const errMsg = `PRE-UPLOAD BLOCKED: ${preUpload.blockers.join(', ')}`;
+      logger.error(`[UploadGate] ${errMsg}`);
+      await prisma.videoProject.update({
+        where: { id: input.projectId },
+        data: { status: 'validation_failed' },
+      });
+      throw new Error(`UPLOAD_BLOCKED: ${errMsg}`);
     }
+
+    const validation = await this.validationGate.validateVideo(videoPath, scenes, undefined, input.topic);
+    if (!validation.passed) {
+      const blockerNames = validation.checks.filter(c => !c.passed && c.severity === 'block').map(c => c.name);
+      throw new Error(`UPLOAD_BLOCKED: ${validation.summary} (${blockerNames.join(', ')})`);
+    }
+    logger.info(`[UploadGate] ${validation.summary}`);
 
     const videoId = await uploadToYouTube({
       title: seo.title || input.topic,
@@ -122,6 +137,7 @@ export class UploadEngineStep extends PipelineStep<UploadEngineInput, UploadEngi
       categoryId: '22',
       privacyStatus: 'public',
       videoPath,
+      thumbnailPath,
       userId: input.userId,
       channelId: input.channelId,
     });
@@ -190,18 +206,12 @@ export class UploadEngineStep extends PipelineStep<UploadEngineInput, UploadEngi
   }
 
   async fallback(input: UploadEngineInput, error: Error): Promise<UploadEngineOutput> {
-    await activateFallback('unknown_oauth', error);
-    await queueUploadForFallback(input.projectId, input.userId);
-
+    await activateFallback('unknown_oauth', error).catch(() => {});
+    await queueUploadForFallback(input.projectId, input.userId).catch(() => {});
     await prisma.videoProject.update({
       where: { id: input.projectId },
-      data: { status: 'published' },
+      data: { status: 'upload_failed' },
     }).catch(() => {});
-
-    return {
-      uploadId: input.projectId,
-      videoId: `fallback_${input.projectId}`,
-      publishedAt: new Date(),
-    };
+    throw new Error(`YouTube upload failed after retries: ${error.message}`);
   }
 }

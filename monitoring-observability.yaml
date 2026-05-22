@@ -1,0 +1,130 @@
+# Datadog Agent Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datadog-config
+  namespace: youtube-ai
+data:
+  datadog.yaml: |
+    api_key: <DATADOG_API_KEY>
+    dd_url: https://api.datadoghq.com
+    env: production
+    service: youtube-ai
+    
+    apm_enabled: true
+    apm_config:
+      enabled: true
+      apm_dd_url: https://trace.agent.datadoghq.com
+    
+    logs_enabled: true
+    logs_config:
+      - type: file
+        path: /var/log/youtube-ai/*.log
+        service: youtube-ai
+        source: nodejs
+        tags:
+          - env:production
+    
+    # Monitor specific endpoints
+    process_config:
+      enabled: true
+    
+    # Custom metrics from Prometheus
+    prometheus_scrape_interval: 15
+
+---
+# Sentry Configuration (via environment variables)
+# SENTRY_DSN=https://<key>@<org>.ingest.sentry.io/<project_id>
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentry-config
+  namespace: youtube-ai
+data:
+  sentry-config.js: |
+    module.exports = {
+      dsn: process.env.SENTRY_DSN,
+      environment: 'production',
+      integrations: [
+        new Sentry.Integrations.Http({ tracing: true }),
+        new Sentry.Integrations.OnUncaughtException(),
+        new Sentry.Integrations.OnUnhandledRejection(),
+      ],
+      tracesSampleRate: 0.1,
+      beforeSend(event, hint) {
+        // Filter out health check requests
+        if (event.request?.url?.includes('/health')) {
+          return null;
+        }
+        return event;
+      },
+    };
+
+---
+# ELK Stack (Elasticsearch, Logstash, Kibana) Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: youtube-ai
+data:
+  filebeat.yml: |
+    filebeat.inputs:
+    - type: container
+      enabled: true
+      paths:
+        - '/var/lib/docker/containers/*/*.log'
+      processors:
+        - add_kubernetes_metadata:
+            host: ${NODE_NAME}
+            matchers:
+            - logs_path:
+                logs_path: "/var/lib/docker/containers/"
+    
+    output.elasticsearch:
+      hosts: ["elasticsearch:9200"]
+      index: "youtube-ai-%{+yyyy.MM.dd}"
+    
+    logging.level: info
+    logging.selectors: ["*"]
+
+---
+# OpenTelemetry Collector Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: youtube-ai
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+    
+    exporters:
+      jaeger:
+        endpoint: jaeger-collector:14250
+      prometheus:
+        endpoint: "0.0.0.0:8888"
+      otlp:
+        endpoint: datadog-agent:4317
+    
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [jaeger, otlp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [prometheus]

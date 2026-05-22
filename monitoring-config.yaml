@@ -1,0 +1,151 @@
+# Prometheus Configuration for YouTube AI Platform
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: youtube-ai
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    
+    scrape_configs:
+    - job_name: 'youtube-ai-api'
+      static_configs:
+      - targets: ['youtube-ai-api:9090']
+      metrics_path: '/metrics'
+    
+    - job_name: 'youtube-ai-worker'
+      static_configs:
+      - targets: ['youtube-ai-worker:9090']
+    
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets: ['alertmanager:9093']
+    
+    rule_files:
+    - '/etc/prometheus/alert-rules.yml'
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-rules
+  namespace: youtube-ai
+data:
+  alert-rules.yml: |
+    groups:
+    - name: youtube-ai
+      interval: 30s
+      rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        annotations:
+          summary: "High error rate detected"
+      
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[1h]) > 5
+        for: 1m
+        annotations:
+          summary: "Pod crash looping detected"
+      
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{pod=~"youtube-ai.*"} / 1073741824 > 0.8
+        for: 5m
+        annotations:
+          summary: "High memory usage"
+      
+      - alert: JobQueueBacklog
+        expr: bullmq_queue_size > 1000
+        for: 10m
+        annotations:
+          summary: "Large job queue backlog detected"
+      
+      - alert: DatabaseConnectionPoolExhausted
+        expr: db_connection_pool_active / db_connection_pool_size > 0.9
+        for: 5m
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: youtube-ai
+data:
+  prometheus.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://prometheus:9090
+      isDefault: true
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: youtube-ai
+data:
+  youtube-ai-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "YouTube AI Platform",
+        "panels": [
+          {
+            "title": "API Response Time (p99)",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))"
+              }
+            ]
+          },
+          {
+            "title": "Job Success Rate",
+            "targets": [
+              {
+                "expr": "rate(bullmq_job_completed_total[5m]) / rate(bullmq_job_total[5m])"
+              }
+            ]
+          },
+          {
+            "title": "Worker Queue Depth",
+            "targets": [
+              {
+                "expr": "bullmq_queue_size"
+              }
+            ]
+          },
+          {
+            "title": "Database Connections",
+            "targets": [
+              {
+                "expr": "db_connection_pool_active"
+              }
+            ]
+          },
+          {
+            "title": "Error Rate",
+            "targets": [
+              {
+                "expr": "rate(http_requests_total{status=~\"5..\"}[5m])"
+              }
+            ]
+          },
+          {
+            "title": "Redis Memory Usage",
+            "targets": [
+              {
+                "expr": "redis_memory_used_bytes / 1073741824"
+              }
+            ]
+          }
+        ]
+      }
+    }

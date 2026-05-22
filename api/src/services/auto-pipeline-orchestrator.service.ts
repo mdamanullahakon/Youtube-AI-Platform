@@ -1,3 +1,6 @@
+/**
+ * @deprecated Use canonical-pipeline.service (sync PipelineOrchestrator) for all production automation.
+ */
 import { prisma } from '../config/db';
 import { logger } from '../utils/logger';
 import { uploadToYouTube } from './youtube.service';
