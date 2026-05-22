@@ -180,9 +180,6 @@ jobs:
 
       - name: Generate coverage badge
         run: node scripts/update-coverage-badge.js
-        env:
-          # GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-          # GIST_ID: ${{ secrets.GIST_ID }}
 
       - name: Upload coverage badge artifact
         uses: actions/upload-artifact@v4
