@@ -35,13 +35,11 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (keysData?.success && keysData?.data) {
-      setApiKeys((prev) => {
-        const next = {
+      queueMicrotask(() => {
+        setApiKeys({
           geminiKey: keysData.data.geminiKey || '',
           youtubeApiKey: keysData.data.youtubeApiKey || '',
-        };
-        if (prev.geminiKey === next.geminiKey && prev.youtubeApiKey === next.youtubeApiKey) return prev;
-        return next;
+        });
       });
     }
   }, [keysData]);
@@ -217,7 +215,7 @@ export default function SettingsPage() {
     mutationFn: () => apiClient('/api/auth/youtube/refresh-all', { method: 'POST' }),
     onSuccess: (data) => {
       if (data.success) {
-        const count = data.results?.filter((r: any) => r.status === 'refreshed').length || 0;
+        const count = data.results?.filter((r: { status: string }) => r.status === 'refreshed').length || 0;
         toast.success(`Refreshed ${count} channel(s)`);
       } else {
         toast.error(data.message || 'Failed to refresh tokens');
@@ -405,7 +403,7 @@ export default function SettingsPage() {
                   {retryAllMutation.isPending ? 'Retrying...' : 'Retry All'}
                 </button>
               </div>
-              {fallbackQueue.slice(0, 5).map((item: any) => (
+              {fallbackQueue.slice(0, 5).map((item: { id: string; projectId: string; project?: { title?: string }; title?: string; createdAt: string }) => (
                 <div key={item.id} className="flex items-center justify-between p-2 bg-background/50 rounded-lg">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm truncate">{item.project?.title || item.title || 'Untitled'}</p>

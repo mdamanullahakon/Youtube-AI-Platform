@@ -158,7 +158,7 @@ describe('ChipList', () => {
   });
 
   it('returns null for undefined items', () => {
-    const { container } = render(<ChipList items={undefined as any} label="Undefined" />);
+    const { container } =    render(<ChipList items={undefined as unknown as string[]} label="Undefined" />);
     expect(container.firstChild).toBeNull();
   });
 

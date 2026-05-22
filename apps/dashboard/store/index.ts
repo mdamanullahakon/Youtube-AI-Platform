@@ -67,15 +67,16 @@ const API_URL = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_
 const MAX_RETRIES = 3;
 const BASE_RETRY_DELAY = 1000;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const pendingRequests = new Map<string, Promise<any>>();
 
-function isNetworkError(error: any): boolean {
-  const msg = error?.message || String(error);
+function isNetworkError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
   return msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('load failed') || msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('ERR_NETWORK');
 }
 
-function getUserFriendlyError(error: any): string {
-  const msg = error?.message || String(error);
+function getUserFriendlyError(error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error);
   if (msg.includes('ERR_CONNECTION_REFUSED')) return 'API server is not running. Start the backend on port 4000.';
   if (msg.includes('ERR_NETWORK')) return 'Network error — check your connection and API server status.';
   if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('load failed')) return 'Unable to reach the API server. Is the backend running?';
@@ -87,7 +88,7 @@ async function fetchWithRetry(url: string, options: RequestInit, retries: number
     try {
       const response = await fetch(url, options);
       return response;
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (attempt < retries && isNetworkError(error)) {
         const delay = BASE_RETRY_DELAY * Math.pow(2, attempt - 1);
         if (process.env.NODE_ENV === 'development') {
@@ -134,6 +135,7 @@ export async function apiClient(endpoint: string, options: RequestInit = {}) {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const execute = async (): Promise<any> => {
     try {
       let response = await fetchWithRetry(`${API_URL}${endpoint}`, fetchOptions, MAX_RETRIES);
@@ -195,8 +197,8 @@ export async function apiClient(endpoint: string, options: RequestInit = {}) {
           ...(process.env.NODE_ENV === 'development' ? { raw: text.substring(0, 200) } : {}),
         };
       }
-    } catch (error: any) {
-      if (error?.name === 'AbortError') {
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'AbortError') {
         return { success: false, message: 'Request cancelled', code: 'ABORTED' };
       }
       const errorMessage = getUserFriendlyError(error);

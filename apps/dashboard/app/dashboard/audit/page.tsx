@@ -202,7 +202,7 @@ export default function AuditPage() {
     setStep('audit');
 
     try {
-      const body: Record<string, any> = { channelId: selectedChannelId };
+      const body: Record<string, string> = { channelId: selectedChannelId };
       if (expectedNiche.trim()) body.expectedNiche = expectedNiche.trim();
       if (channelDescription.trim()) body.channelDescription = channelDescription.trim();
       if (channelTags.trim()) body.channelTags = channelTags.trim();
@@ -221,8 +221,8 @@ export default function AuditPage() {
       setResultTab('audit-results');
       setStep('result');
       toast.success('Channel audit complete!');
-    } catch (err: any) {
-      const msg = err?.message || 'Failed to run audit';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to run audit';
       setError(msg);
       toast.error(msg);
       setStep('select');
@@ -265,8 +265,8 @@ export default function AuditPage() {
       setResultTab('optimization');
       setStep('optimize');
       toast.success('Channel optimization complete!');
-    } catch (err: any) {
-      const msg = err?.message || 'Failed to optimize';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to optimize';
       setError(msg);
       toast.error(msg);
     } finally {
@@ -485,7 +485,7 @@ export default function AuditPage() {
                         <PolarGrid stroke="#1a1a24" />
                         <PolarAngleAxis dataKey="category" tick={{ fill: '#71717a', fontSize: 10 }} />
                         <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: '#71717a', fontSize: 9 }} />
-                        <Tooltip contentStyle={tooltipStyle} formatter={(value: any) => [`${value}%`, 'Score']} />
+                        <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => [`${value}%`, 'Score']} />
                         <Radar name="Score" dataKey="score" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.3} strokeWidth={2} />
                       </RadarChart>
                     </ResponsiveContainer>

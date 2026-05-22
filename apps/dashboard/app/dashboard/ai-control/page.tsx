@@ -141,11 +141,11 @@ export default function AIControlPage() {
             </div>
             <div className="glow-card rounded-xl p-5">
               <p className="text-sm text-muted">Active Jobs</p>
-              <p className="text-2xl font-bold">{queues.reduce((s: number, q: any) => s + q.active, 0)}</p>
+              <p className="text-2xl font-bold">{queues.reduce((s: number, q: { active: number }) => s + q.active, 0)}</p>
             </div>
             <div className="glow-card rounded-xl p-5">
               <p className="text-sm text-muted">Queue Size</p>
-              <p className="text-2xl font-bold">{queues.reduce((s: number, q: any) => s + q.waiting, 0)}</p>
+              <p className="text-2xl font-bold">{queues.reduce((s: number, q: { waiting: number }) => s + q.waiting, 0)}</p>
             </div>
             <div className="glow-card rounded-xl p-5">
               <p className="text-sm text-muted">Errors Captured</p>
@@ -156,7 +156,7 @@ export default function AIControlPage() {
           <div className="glow-card rounded-xl p-6">
             <h2 className="text-lg font-semibold mb-4">Queue Status</h2>
             <div className="space-y-3">
-              {queues.map((q: any) => (
+              {queues.map((q: { name: string; waiting: number; active: number; completed: number; failed: number }) => (
                 <div key={q.name} className="flex items-center justify-between p-3 bg-black/20 rounded-xl">
                   <span className="text-sm font-medium">{q.name}</span>
                   <div className="flex gap-4 text-xs text-muted">
@@ -203,7 +203,7 @@ export default function AIControlPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(errorsData?.errors || errors?.recent || []).map((err: any) => (
+                  {(errorsData?.errors || errors?.recent || []).map((err: { id: string; timestamp: string; type: string; severity: string; message: string }) => (
                     <tr key={err.id} className="border-b border-card-border/50 hover:bg-card-border/20">
                       <td className="p-4 text-muted">{new Date(err.timestamp).toLocaleTimeString()}</td>
                       <td className="p-4"><span className="text-xs px-2 py-1 rounded-full bg-card-border">{err.type}</span></td>
@@ -249,7 +249,7 @@ export default function AIControlPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(viralData?.opportunities || []).map((opp: any) => (
+                  {(viralData?.opportunities || []).map((opp: { id: string; topic: string; viralScore: number; competition?: number; source?: string; createdAt: string }) => (
                     <tr key={opp.id} className="border-b border-card-border/50 hover:bg-card-border/20">
                       <td className="p-4 font-medium">{opp.topic}</td>
                       <td className="p-4">
@@ -315,7 +315,7 @@ export default function AIControlPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Winning Patterns Library</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {(patternsData?.patterns || []).map((p: any) => (
+            {(patternsData?.patterns || []).map((p: { id: string; patternType?: string; confidence?: number; content?: string; description?: string; source?: string }) => (
               <div key={p.id} className="glow-card rounded-xl p-4">
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="font-semibold">{p.patternType || 'Pattern'}</h3>
@@ -336,7 +336,7 @@ export default function AIControlPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Channel Metrics</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {(channelsData?.channels || []).map((ch: any) => (
+            {(channelsData?.channels || []).map((ch: { id: string; youtubeAccount?: { channelAvatar?: string; channelTitle?: string }; subscriberCount?: number; totalViews?: number; totalVideos?: number; lastSyncedAt?: string }) => (
               <div key={ch.id} className="glow-card rounded-xl p-5">
                 <div className="flex items-center gap-3 mb-3">
                   {ch.youtubeAccount?.channelAvatar ? (

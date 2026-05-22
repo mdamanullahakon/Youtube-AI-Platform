@@ -18,10 +18,8 @@ export function ConfigGuard({ children, requiredSection, fallback }: ConfigGuard
   const [checking, setChecking] = useState(!fetched);
 
   useEffect(() => {
-    if (fetched) {
-      setChecking(false);
-      return;
-    }
+    if (fetched) return;
+
     apiClient('/api/config/status').then((data) => {
       if (data.success && Array.isArray(data.data)) {
         setConfigs(data.data);

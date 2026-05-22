@@ -6,7 +6,7 @@ import { StatCard } from '@/components/StatCard';
 import { ActivityChart } from '@/components/ActivityChart';
 import { apiClient } from '@/store';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar,
 } from 'recharts';
 
@@ -114,7 +114,7 @@ export default function AnalyticsPage() {
               <h3 className="text-lg font-semibold mb-4">Best Performing Hook Types</h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={report.topHookTypes.map((h: any) => ({ name: h.type || h.hookType, retention: h.avgRetention || h.averageRetention || 0 }))}>
+                  <BarChart data={report.topHookTypes.map((h: { type?: string; hookType?: string; avgRetention?: number; averageRetention?: number }) => ({ name: h.type || h.hookType, retention: h.avgRetention || h.averageRetention || 0 }))}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1a1a24" />
                     <XAxis dataKey="name" stroke="#71717a" fontSize={11} />
                     <YAxis stroke="#71717a" fontSize={12} unit="%" />
@@ -129,7 +129,7 @@ export default function AnalyticsPage() {
             <div className="glow-card rounded-xl p-6">
               <h3 className="text-lg font-semibold mb-4">Best Thumbnail Styles by CTR</h3>
               <div className="space-y-3">
-                {report.topThumbnailStyles.map((s: any, i: number) => (
+                {report.topThumbnailStyles.map((s: { style?: string; thumbnailStyle?: string; ctr?: number; averageCTR?: number }, i: number) => (
                   <div key={i} className="flex items-center justify-between p-3 bg-card-border/30 rounded-lg">
                     <span className="text-sm">{s.style || s.thumbnailStyle}</span>
                     <span className="text-sm font-medium text-primary">{s.ctr || s.averageCTR?.toFixed(1)}% CTR</span>
@@ -142,7 +142,7 @@ export default function AnalyticsPage() {
             <div className="glow-card rounded-xl p-6">
               <h3 className="text-lg font-semibold mb-4">Optimization Recommendations</h3>
               <div className="space-y-2">
-                {report.recommendations.slice(0, 5).map((r: any, i: number) => (
+                {report.recommendations.slice(0, 5).map((r: { priority?: string; content?: string; recommendation?: string }, i: number) => (
                   <div key={i} className="p-3 bg-card-border/30 rounded-lg text-sm">
                     <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium mr-2 ${
                       r.priority === 'critical' ? 'bg-red-500/20 text-red-400' :
@@ -165,7 +165,7 @@ export default function AnalyticsPage() {
             <div className="glow-card rounded-xl p-6">
               <h3 className="text-lg font-semibold mb-4">Thumbnail Style Performance</h3>
               <div className="space-y-3">
-                {ctrAnalysis.map((item: any, i: number) => (
+                {ctrAnalysis.map((item: { style?: string; thumbnailStyle?: string; ctr?: number; predictedCTR?: number; impressions?: number; clicks?: number; performance?: string }, i: number) => (
                   <div key={i} className="p-4 bg-card-border/30 rounded-lg">
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-medium">{item.style || item.thumbnailStyle || `Style ${i + 1}`}</span>
@@ -187,7 +187,7 @@ export default function AnalyticsPage() {
         <div className="space-y-4">
           {patternsData.length > 0 ? (
             <div className="grid gap-4">
-              {patternsData.map((p: any, i: number) => (
+              {patternsData.map((p: { category?: string; type?: string; confidence?: number; score?: number; content?: string; pattern?: string; description?: string; sampleSize?: number }, i: number) => (
                 <div key={i} className="glow-card rounded-xl p-4">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium capitalize">{p.category || p.type || 'Pattern'}</span>
@@ -217,7 +217,7 @@ export default function AnalyticsPage() {
                 <div className="glow-card rounded-xl p-6">
                   <h3 className="text-lg font-semibold mb-4">Revenue Projections</h3>
                   <div className="space-y-2">
-                    {Object.entries(monetizationReport.projection).map(([period, amount]: [string, any]) => (
+                    {Object.entries(monetizationReport.projection).map(([period, amount]: [string, number | string]) => (
                       <div key={period} className="flex justify-between p-2 bg-card-border/30 rounded">
                         <span className="text-sm capitalize">{period}</span>
                         <span className="text-sm font-medium text-primary">${typeof amount === 'number' ? amount.toFixed(2) : amount}</span>

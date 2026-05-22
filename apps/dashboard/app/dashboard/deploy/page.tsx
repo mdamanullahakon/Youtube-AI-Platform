@@ -3,8 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiClient } from '@/store';
 
-const DEPLOY_TABS = ['vercel', 'vps', 'logs'] as const;
-type DeployTab = (typeof DEPLOY_TABS)[number];
+type DeployTab = 'vercel' | 'vps' | 'logs';
 
 interface DeployLog {
   type: 'log' | 'error' | 'success' | 'progress';
@@ -21,7 +20,7 @@ export default function DeployPage() {
 
   const [vercelToken, setVercelToken] = useState('');
   const [vercelProjectName, setVercelProjectName] = useState('');
-  const [vercelStatus, setVercelStatus] = useState<{ connected?: boolean; projects?: any[]; error?: string } | null>(null);
+  const [vercelStatus, setVercelStatus] = useState<{ connected?: boolean; projects?: Record<string, unknown>[]; error?: string } | null>(null);
 
   const [vpsHost, setVpsHost] = useState('');
   const [vpsPort, setVpsPort] = useState('22');
@@ -30,7 +29,7 @@ export default function DeployPage() {
   const [vpsPrivateKey, setVpsPrivateKey] = useState('');
   const [vpsRepoUrl, setVpsRepoUrl] = useState('');
   const [vpsBranch, setVpsBranch] = useState('main');
-  const [vpsStatus, setVpsStatus] = useState<{ online?: boolean; nodeVersion?: string; pm2Processes?: any[]; error?: string } | null>(null);
+  const [vpsStatus, setVpsStatus] = useState<{ online?: boolean; nodeVersion?: string; pm2Processes?: Record<string, unknown>[]; error?: string } | null>(null);
 
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -76,7 +75,7 @@ export default function DeployPage() {
     setDeployResult(null);
     addLog({ type: 'log', message: 'Starting VPS deployment...', timestamp: new Date().toISOString(), stage: 'init' });
 
-    const body: any = { host: vpsHost, port: parseInt(vpsPort), username: vpsUsername, repoUrl: vpsRepoUrl, branch: vpsBranch };
+    const body: Record<string, unknown> = { host: vpsHost, port: parseInt(vpsPort), username: vpsUsername, repoUrl: vpsRepoUrl, branch: vpsBranch };
     if (vpsPassword) body.password = vpsPassword;
     if (vpsPrivateKey) body.privateKey = vpsPrivateKey;
 

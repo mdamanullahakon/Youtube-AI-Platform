@@ -7,7 +7,7 @@ const CHECK_INTERVAL = 15000;
 
 export function ApiConnectivity({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(true);
-  const [lastCheck, setLastCheck] = useState(Date.now());
+  const [lastCheck, setLastCheck] = useState(() => Date.now());
   const mounted = useRef(true);
 
   useEffect(() => {

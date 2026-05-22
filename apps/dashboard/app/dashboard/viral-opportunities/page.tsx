@@ -3,6 +3,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/store';
 
+interface ViralOpportunity {
+  id: string;
+  topic: string;
+  viralScore: number;
+  ctrScore?: number;
+  retentionScore?: number;
+  competition?: number;
+  monetizationScore?: number;
+  source?: string;
+}
+
+interface WinningPattern {
+  id: string;
+  patternType?: string;
+  confidence?: number;
+  content?: string;
+  description?: string;
+  source?: string;
+}
+
 export default function ViralOpportunitiesPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['viral-opportunities'],
@@ -67,7 +87,7 @@ export default function ViralOpportunitiesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {opportunities.map((opp: any) => (
+                  {opportunities.map((opp: ViralOpportunity) => (
                     <tr key={opp.id} className="border-b border-card-border/50 hover:bg-card-border/20">
                       <td className="p-4 font-medium max-w-xs truncate">{opp.topic}</td>
                       <td className="p-4">
@@ -92,7 +112,7 @@ export default function ViralOpportunitiesPage() {
                     </tr>
                   ))}
                   {opportunities.length === 0 && (
-                    <tr><td colSpan={8} className="p-8 text-center text-muted">No opportunities found. Click "Scan Now" to discover viral topics.</td></tr>
+                    <tr><td colSpan={8} className="p-8 text-center text-muted">No opportunities found. Click &quot;Scan Now&quot; to discover viral topics.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -101,8 +121,7 @@ export default function ViralOpportunitiesPage() {
 
           <div className="glow-card rounded-xl p-6">
             <h2 className="text-lg font-semibold mb-4">Winning Patterns Library</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {patterns.map((p: any) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">                  {patterns.map((p: WinningPattern) => (
                 <div key={p.id} className="bg-black/20 rounded-xl p-4 border border-card-border">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-medium px-2 py-1 rounded-full bg-primary/10 text-primary">{p.patternType || 'Pattern'}</span>

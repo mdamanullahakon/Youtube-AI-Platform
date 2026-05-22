@@ -4,12 +4,12 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { apiClient } from '@/store';
 import toast from 'react-hot-toast';
-import { useState } from 'react';
+
 
 export default function ProjectDetailPage() {
   const params = useParams();
   const projectId = params.id as string;
-  const [generating, setGenerating] = useState(false);
+
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['project', projectId],

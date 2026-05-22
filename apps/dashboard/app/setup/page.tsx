@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { useAuthStore, apiClient } from '@/store';
-import { useConfigStore, type StepId, type ConfigSection, type TestResult } from '@/store/config-store';
+import { apiClient } from '@/store';
+import { useConfigStore, type StepId, type ConfigSection } from '@/store/config-store';
 
 const STEPS: { id: StepId; label: string; icon: string }[] = [
   { id: 'welcome', label: 'Welcome', icon: '👋' },
@@ -244,7 +244,6 @@ function AssistantPanel({ onClose }: { onClose: () => void }) {
 export default function SetupPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { token } = useAuthStore();
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
 
   const {
