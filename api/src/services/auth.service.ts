@@ -81,8 +81,12 @@ export function verifyRefreshToken(token: string): JwtPayload {
 // ─── Token Blacklist ─────────────────────────────
 
 export async function blacklistToken(token: string, ttlMs: number): Promise<void> {
-  const key = `blacklist:${token}`;
-  await redisConnection.set(key, '1', 'PX', ttlMs);
+  try {
+    const key = `blacklist:${token}`;
+    await redisConnection.set(key, '1', 'PX', ttlMs);
+  } catch (err: any) {
+    apiLogger.warn('blacklistToken failed', { error: err?.message || String(err) });
+  }
 }
 
 export async function isTokenBlacklisted(token: string): Promise<boolean> {
@@ -95,8 +99,12 @@ export async function isTokenBlacklisted(token: string): Promise<boolean> {
 }
 
 export async function blacklistUserTokens(userId: string): Promise<void> {
-  const key = `user-blacklist:${userId}`;
-  await redisConnection.set(key, Date.now().toString(), 'PX', REFRESH_TOKEN_TTL_MS);
+  try {
+    const key = `user-blacklist:${userId}`;
+    await redisConnection.set(key, Date.now().toString(), 'PX', REFRESH_TOKEN_TTL_MS);
+  } catch (err: any) {
+    apiLogger.warn('blacklistUserTokens failed', { error: err?.message || String(err), userId });
+  }
 }
 
 export async function areUserTokensBlacklisted(userId: string, tokenJti: string): Promise<boolean> {
@@ -129,40 +137,62 @@ export async function createSession(
   ip: string,
   userAgent: string,
 ): Promise<void> {
-  const session: SessionInfo = {
-    jti: tokenJti,
-    createdAt: new Date().toISOString(),
-    lastUsedAt: new Date().toISOString(),
-    ip,
-    userAgent,
-    token,
-  };
-  await redisConnection.hset(`sessions:${userId}`, tokenJti, JSON.stringify(session));
-  await redisConnection.expire(`sessions:${userId}`, Math.ceil(REFRESH_TOKEN_TTL_MS / 1000));
+  try {
+    const session: SessionInfo = {
+      jti: tokenJti,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: new Date().toISOString(),
+      ip,
+      userAgent,
+      token,
+    };
+    await redisConnection.hset(`sessions:${userId}`, tokenJti, JSON.stringify(session));
+    await redisConnection.expire(`sessions:${userId}`, Math.ceil(REFRESH_TOKEN_TTL_MS / 1000));
+  } catch (err: any) {
+    apiLogger.warn('createSession failed', { error: err?.message || String(err), userId });
+    // Don't let Redis errors break auth flow
+  }
 }
 
 export async function updateSessionLastUsed(userId: string, jti: string): Promise<void> {
-  const data = await redisConnection.hget(`sessions:${userId}`, jti);
-  if (data) {
-    const session: SessionInfo = JSON.parse(data);
-    session.lastUsedAt = new Date().toISOString();
-    await redisConnection.hset(`sessions:${userId}`, jti, JSON.stringify(session));
+  try {
+    const data = await redisConnection.hget(`sessions:${userId}`, jti);
+    if (data) {
+      const session: SessionInfo = JSON.parse(data);
+      session.lastUsedAt = new Date().toISOString();
+      await redisConnection.hset(`sessions:${userId}`, jti, JSON.stringify(session));
+    }
+  } catch (err: any) {
+    apiLogger.warn('updateSessionLastUsed failed', { error: err?.message || String(err), userId, jti });
   }
 }
 
 export async function removeSession(userId: string, jti: string): Promise<void> {
-  await redisConnection.hdel(`sessions:${userId}`, jti);
+  try {
+    await redisConnection.hdel(`sessions:${userId}`, jti);
+  } catch (err: any) {
+    apiLogger.warn('removeSession failed', { error: err?.message || String(err), userId, jti });
+  }
 }
 
 export async function getUserSessions(userId: string): Promise<SessionInfo[]> {
-  const data = await redisConnection.hgetall(`sessions:${userId}`);
-  if (!data) return [];
-  return Object.values(data).map((v) => JSON.parse(v));
+  try {
+    const data = await redisConnection.hgetall(`sessions:${userId}`);
+    if (!data) return [];
+    return Object.values(data).map((v) => JSON.parse(v));
+  } catch (err: any) {
+    apiLogger.warn('getUserSessions failed', { error: err?.message || String(err), userId });
+    return [];
+  }
 }
 
 export async function invalidateAllUserSessions(userId: string): Promise<void> {
-  await redisConnection.del(`sessions:${userId}`);
-  await blacklistUserTokens(userId);
+  try {
+    await redisConnection.del(`sessions:${userId}`);
+    await blacklistUserTokens(userId);
+  } catch (err: any) {
+    apiLogger.warn('invalidateAllUserSessions failed', { error: err?.message || String(err), userId });
+  }
 }
 
 // ─── Brute Force Protection ──────────────────────
@@ -186,32 +216,45 @@ export async function isAccountLocked(email: string): Promise<{ locked: boolean;
 }
 
 export async function recordFailedLoginAttempt(email: string, ip: string): Promise<void> {
-  const key = `login-attempts:${email}`;
-  const attempts = await redisConnection.incr(key);
-  if (attempts === 1) {
-    await redisConnection.pexpire(key, LOCKOUT_WINDOW_MS);
-  }
+  try {
+    const key = `login-attempts:${email}`;
+    const attempts = await redisConnection.incr(key);
+    if (attempts === 1) {
+      await redisConnection.pexpire(key, LOCKOUT_WINDOW_MS);
+    }
 
-  const ipKey = `login-ips:${email}`;
-  await redisConnection.lpush(ipKey, `${Date.now()}:${ip}`);
-  await redisConnection.ltrim(ipKey, 0, 49);
-  await redisConnection.expire(ipKey, 86400);
+    const ipKey = `login-ips:${email}`;
+    await redisConnection.lpush(ipKey, `${Date.now()}:${ip}`);
+    await redisConnection.ltrim(ipKey, 0, 49);
+    await redisConnection.expire(ipKey, 86400);
 
-  if (attempts >= MAX_LOGIN_ATTEMPTS) {
-    const lockoutDuration = Math.min(Math.pow(2, attempts - MAX_LOGIN_ATTEMPTS) * 60 * 1000, 3600 * 1000);
-    await redisConnection.set(`lockout:${email}`, `${Date.now()}:${lockoutDuration}`, 'PX', lockoutDuration);
-    apiLogger.warn(`Account locked due to failed attempts`, { email, attempts, lockoutMs: lockoutDuration });
+    if (attempts >= MAX_LOGIN_ATTEMPTS) {
+      const lockoutDuration = Math.min(Math.pow(2, attempts - MAX_LOGIN_ATTEMPTS) * 60 * 1000, 3600 * 1000);
+      await redisConnection.set(`lockout:${email}`, `${Date.now()}:${lockoutDuration}`, 'PX', lockoutDuration);
+      apiLogger.warn(`Account locked due to failed attempts`, { email, attempts, lockoutMs: lockoutDuration });
+    }
+  } catch (err: any) {
+    apiLogger.warn('recordFailedLoginAttempt failed', { error: err?.message || String(err), email });
   }
 }
 
 export async function clearLoginAttempts(email: string): Promise<void> {
-  await redisConnection.del(`login-attempts:${email}`);
-  await redisConnection.del(`lockout:${email}`);
+  try {
+    await redisConnection.del(`login-attempts:${email}`);
+    await redisConnection.del(`lockout:${email}`);
+  } catch (err: any) {
+    apiLogger.warn('clearLoginAttempts failed', { error: err?.message || String(err), email });
+  }
 }
 
 export async function getFailedLoginAttempts(email: string): Promise<number> {
-  const val = await redisConnection.get(`login-attempts:${email}`);
-  return val ? parseInt(val, 10) : 0;
+  try {
+    const val = await redisConnection.get(`login-attempts:${email}`);
+    return val ? parseInt(val, 10) : 0;
+  } catch (err: any) {
+    apiLogger.warn('getFailedLoginAttempts failed', { error: err?.message || String(err), email });
+    return 0;
+  }
 }
 
 // ─── Suspicious Login Detection ──────────────────
@@ -228,29 +271,34 @@ export async function detectSuspiciousLogin(
   email: string,
   context: LoginContext,
 ): Promise<{ suspicious: boolean; reason?: string }> {
-  const knownIps = await redisConnection.lrange(`login-ips:${email}`, 0, -1);
-  if (knownIps.length === 0) return { suspicious: false };
+  try {
+    const knownIps = await redisConnection.lrange(`login-ips:${email}`, 0, -1);
+    if (knownIps.length === 0) return { suspicious: false };
 
-  const recentIps = knownIps.map((entry) => entry.split(':')[1]).filter(Boolean);
-  const uniqueRecentIps = [...new Set(recentIps)];
+    const recentIps = knownIps.map((entry) => entry.split(':')[1]).filter(Boolean);
+    const uniqueRecentIps = [...new Set(recentIps)];
 
-  if (uniqueRecentIps.length > 0 && !uniqueRecentIps.includes(context.ip)) {
-    apiLogger.warn(`Suspicious login detected`, {
-      userId,
-      email,
-      currentIp: context.ip,
-      knownIps: uniqueRecentIps,
-      userAgent: context.userAgent,
-    });
-    return { suspicious: true, reason: 'Login from new IP address' };
+    if (uniqueRecentIps.length > 0 && !uniqueRecentIps.includes(context.ip)) {
+      apiLogger.warn(`Suspicious login detected`, {
+        userId,
+        email,
+        currentIp: context.ip,
+        knownIps: uniqueRecentIps,
+        userAgent: context.userAgent,
+      });
+      return { suspicious: true, reason: 'Login from new IP address' };
+    }
+
+    const sessions = await getUserSessions(userId);
+    if (sessions.length > 5) {
+      return { suspicious: true, reason: 'Excessive active sessions' };
+    }
+
+    return { suspicious: false };
+  } catch (err: any) {
+    apiLogger.warn('detectSuspiciousLogin failed', { error: err?.message || String(err), userId, email });
+    return { suspicious: false };
   }
-
-  const sessions = await getUserSessions(userId);
-  if (sessions.length > 5) {
-    return { suspicious: true, reason: 'Excessive active sessions' };
-  }
-
-  return { suspicious: false };
 }
 
 // ─── Refresh Token Rotation ──────────────────────
