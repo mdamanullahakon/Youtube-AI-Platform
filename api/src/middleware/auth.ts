@@ -37,6 +37,7 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
     try {
       payload = verifyAccessToken(token);
     } catch (err: any) {
+      apiLogger.warn('Token validation failed', { error: err?.message || String(err) });
       if (err.name === 'TokenExpiredError') {
         return res.status(401).json({ success: false, message: 'Token expired', code: 'TOKEN_EXPIRED' });
       }
